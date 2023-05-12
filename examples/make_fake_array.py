@@ -44,7 +44,7 @@ for psr in psrs:
 
 ''' Inject GWB'''
 print('Injecting GWB')
-add_correlated_red_noise_gp(psrs, orf='hd')
+add_correlated_red_noise_gp(psrs, log10_A=-15., gamma=13/3, orf='hd')
 
 ''' Inject CGW '''
 params = {}
