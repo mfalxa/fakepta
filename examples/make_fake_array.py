@@ -62,5 +62,5 @@ for psr in psrs:
     psr.add_cgw(params['costheta'], params['phi'], params['cosinc'], params['log10_Mc'], params['log10_fgw'], params['log10_h'], params['phase0'], params['psi'], psrterm=True)
 
 ''' Save pickle '''
-pickle.dump(psrs, open('.simulated/data/fake_25_psrs_gp_gwb+cgw.pkl', 'wb'))
+pickle.dump(psrs, open('./simulated_data/fake_25_psrs_gp_gwb+cgw.pkl', 'wb'))
 print('Done')
