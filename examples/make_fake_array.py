@@ -5,7 +5,7 @@ import pickle, json
 import scipy.constants as sc
 from fakepta.correlated_noises import add_correlated_red_noise_gp
 
-''' Make fake array of 25 psrs with :
+''' Make fake array of 25 pulsars with :
     - Tobs : observation time for each pulsar (in years)
     - ntoas : number of TOAs for each pulsars
     - isotropic : if True, pulsars are isotropically distributed in the sky, if False, randomly distributed
@@ -14,11 +14,17 @@ from fakepta.correlated_noises import add_correlated_red_noise_gp
     - pdist : pulsar distance (in kiloparsec)
     - backends : list of backend names
     - gp_noises : if True, the noises are injected with the "fakepta.Pulsar.add_time_correlated_noise_gp" method, if False, with "fakepta.Pulsar.add_time_correlated_noise"
-    - noisedict : dictionnary of ENTERPRISE noise parameter values with format {"parameter_name":value}
+    - noisedict : dictionnary of ENTERPRISE noise parameter values with format {"parameter_name":value}, if None, parameter values will be randomised
     - custom_models : dictionnary containing the number of frequency bins for red noise (RN), dispersion measure noise (DM) and scattering variation (Sv) for injection
-                      with format {"psrname":{"RN":nfbin_rn, "DM":nfbin_dm, "Sv":nfbin_sv}}
+                      with format {"psrname":{"RN":nfbin_rn, "DM":nfbin_dm, "Sv":nfbin_sv}}, if "nfbin" set to None, no noise is added.
+                      If "custom_models=None", noise model will be {"RN":30, "DM":100, "Sv":None} for all pulsars
+IF the previously listed parameters are not provided, they will all be randomised
 '''
 # psrs = make_fake_array(npsrs=25, Tobs=10, ntoas=1000, isotropic=True, gaps=True, toaerr=10**(-6), pdist=1., backends='NUPPI', gp_noises=True, noisedict=None, custom_models=None)
+# plot_pta(psrs, plot_name=False)
+
+''' OR 25 pulsars with random parameters '''
+# psrs = make_fake_array(npsrs=25)
 # plot_pta(psrs, plot_name=False)
 
 ''' OR Copy existing array + add noise'''
