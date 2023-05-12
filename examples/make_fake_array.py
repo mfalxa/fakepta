@@ -5,7 +5,16 @@ import pickle, json
 import scipy.constants as sc
 from fakepta.correlated_noises import add_correlated_red_noise_gp
 
-''' Make fake array of 25 psrs '''
+''' Make fake array of 25 psrs with :
+    - Tobs : observation time for each pulsar (in years)
+    - ntoas : number of TOAs for each pulsars
+    - isotropic : if True, pulsars are isotropically distributed in the sky, if False, randomly distributed
+    - gaps : if True, pulsars will have unevenly sampled TOAs, if False, evenly sampled TOAs
+    - toaerr : measurement error for every TOA (in seconds)
+    - pdist : pulsar distance (in kiloparsec)
+    - backends : list of backend names
+    - gp_noises : if True, the noises are injected with the "fakepta.Pulsar.add_time_correlated_noise_gp" method, if False, with "fakepta.Pulsar.add_time_correlated_noise"
+'''
 # psrs = make_fake_array(npsrs=25, Tobs=10, ntoas=1000, isotropic=True, gaps=True, toaerr=10**(-6), pdist=1., backends='NUPPI', gp_noises=True)
 # plot_pta(psrs, plot_name=False)
 
