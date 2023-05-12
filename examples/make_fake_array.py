@@ -1,9 +1,9 @@
-from fake_pta import Pulsar, make_fake_array, copy_array, plot_pta
+from fakepta.fake_pta import Pulsar, make_fake_array, copy_array, plot_pta
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle, json
 import scipy.constants as sc
-from correlated_noises import add_correlated_red_noise_gp
+from fakepta.correlated_noises import add_correlated_red_noise_gp
 
 ''' Make fake array of 25 psrs '''
 # psrs = make_fake_array(npsrs=25, Tobs=10, ntoas=1000, isotropic=True, gaps=True, toaerr=10**(-6), pdist=1., backends='NUPPI', gp_noises=True)
