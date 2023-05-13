@@ -18,7 +18,7 @@ from fakepta.correlated_noises import add_correlated_red_noise_gp
     - custom_models : dictionnary containing the number of frequency bins for red noise (RN), dispersion measure noise (DM) and scattering variation (Sv) for injection
                       with format {"psrname":{"RN":nfbin_rn, "DM":nfbin_dm, "Sv":nfbin_sv}}, if "nfbin" set to None, no noise is added.
                       If "custom_models=None", noise model will be {"RN":30, "DM":100, "Sv":None} for all pulsars
-IF the previously listed parameters are not provided, they will all be randomised
+IF the previously listed parameters are not provided, they will be randomised
 '''
 # psrs = make_fake_array(npsrs=25, Tobs=10, ntoas=1000, isotropic=True, gaps=True, toaerr=10**(-6), pdist=1., backends='NUPPI', gp_noises=True, noisedict=None, custom_models=None)
 # plot_pta(psrs, plot_name=False)
