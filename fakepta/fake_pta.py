@@ -4,10 +4,6 @@ import pickle
 import json
 from enterprise_extensions import deterministic as det
 import scipy.constants as sc
-try:
-    import healpy as hp
-except:
-    print('healpy module not found.')
 
 
 class Pulsar:
