@@ -4,11 +4,15 @@ import pickle
 import json
 from enterprise_extensions import deterministic as det
 import scipy.constants as sc
+try:
+    import healpy as hp
+except:
+    print('healpy module not found.')
 
 
 class Pulsar:
 
-    def __init__(self, toas, toaerr, theta, phi, pdist, custom_noisedict=None, custom_model=None, backends=None):
+    def __init__(self, toas, toaerr, theta, phi, pdist, freqs=[1400], custom_noisedict=None, custom_model=None, backends=None):
 
         self.toas = toas
         self.toaerrs = toaerr * np.ones(len(self.toas))
@@ -19,7 +23,7 @@ class Pulsar:
             self.custom_model = {'RN':30, 'DM':100, 'Sv':None}
         else:
             self.custom_model = custom_model
-        self.freqs = abs(np.random.normal(loc=1400, scale=200, size=len(self.toas)))
+        self.freqs = abs(np.random.choice(freqs, replace=True, size=len(self.toas)) + np.random.normal(scale=200, size=len(self.toas)))
         self.flags = {}
         self.flags['pta'] = 'FAKE'
         # Initialize useless design matrix to avoid bug with enterprise if timing model included
@@ -41,6 +45,7 @@ class Pulsar:
                 noisedict[self.name+'_efac'] = 1.
                 noisedict[self.name+'_log10_tnequad'] = -8.
                 noisedict[self.name+'_log10_t2equad'] = -8.
+
             else:
                 for backend in self.backends:
                     noisedict[self.name+'_'+backend+'_efac'] = 1.
@@ -82,6 +87,28 @@ class Pulsar:
                 mask_backend = self.backend_flags == backend
                 self.toaerrs[mask_backend] = np.sqrt(self.noisedict[self.name+'_'+backend+'_efac']**2 * self.toaerrs[mask_backend]**2 + 10**(2*self.noisedict[self.name+'_'+backend+'_log10_tnequad']))
                 self.residuals[mask_backend] += np.random.normal(scale=self.toaerrs[mask_backend])
+
+    def add_ecorr(self, dt=10, backends=None):
+
+        if backends is None:
+            backends = self.backends
+            for backend in self.backends:
+                if self.name+'_'+backend+'_ecorr' not in [*self.noisedict]:
+                    self.noisedict[self.name+'_'+backend+'_ecorr'] = np.random.uniform(-8., -5.)
+        else:
+            for backend in backends:
+                if self.name+'_'+backend+'_ecorr' not in [*self.noisedict]:
+                    self.noisedict[self.name+'_'+backend+'_ecorr'] = np.random.uniform(-8., -5.)
+
+        times = self.toas - self.toas[0]
+        nt = int(times/dt)
+        for n in range(nt):
+            mask_t = times > n*dt
+            mask_t *= times < (n+1)*dt
+            for backend in backends:
+                backend_mask = self.backend_flags == backend
+                mask = mask_t * backend_mask
+                self.residuals[mask] += 10**(2*self.noisedict[self.name+'_'+backend+'_ecorr']) * np.random.normal()
 
     def add_red_noise(self, gp=True, log10_A=None, gamma=None, cos_phase=True, rand_coeff=False):
 
@@ -218,7 +245,7 @@ class Pulsar:
         return 'J'+h+m+sign+decl+decr
 
 
-def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, isotropic=False, backends=None, noisedict=None, custom_models=None, gp_noises=True):
+def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, freqs=[1400], isotropic=False, backends=None, noisedict=None, custom_models=None, gp_noises=True):
 
     if isotropic:
         # Fibonacci sequence on sphere
@@ -287,7 +314,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
     for i in range(npsrs):
         if custom_models is None:
             custom_model = None
-        psr = Pulsar(toas[i], toaerr[i], np.arccos(costhetas[i]), phis[i], pdist[i], backends=backends[i], custom_noisedict=noisedict, custom_model=custom_model)
+        psr = Pulsar(toas[i], toaerr[i], np.arccos(costhetas[i]), phis[i], pdist[i], freqs=freqs, backends=backends[i], custom_noisedict=noisedict, custom_model=custom_model)
         print('Creating psr', psr.name)
         psr.add_white_noise()
         psr.add_red_noise(gp=gp_noises)
