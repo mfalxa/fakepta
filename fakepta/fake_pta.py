@@ -12,24 +12,25 @@ except:
 
 class Pulsar:
 
-    def __init__(self, toas, toaerr, theta, phi, pdist, freqs=[1400], custom_noisedict=None, custom_model=None, backends=None):
+    def __init__(self, toas, toaerr, theta, phi, pdist, freqs=[1400], custom_noisedict=None, custom_model=None, backends=['backend']):
 
         self.toas = toas
         self.toaerrs = toaerr * np.ones(len(self.toas))
         self.residuals = np.zeros(len(self.toas))
         self.Tspan = np.amax(self.toas) - np.amin(self.toas)
-        self.backends = backends
         if custom_model is None:
             self.custom_model = {'RN':30, 'DM':100, 'Sv':None}
         else:
             self.custom_model = custom_model
-        self.freqs = abs(np.random.choice(freqs, replace=True, size=len(self.toas)) + np.random.normal(scale=200, size=len(self.toas)))
+        self.freqs = np.random.choice(freqs, replace=True, size=len(self.toas))
         self.flags = {}
         self.flags['pta'] = 'FAKE'
         # Initialize useless design matrix to avoid bug with enterprise if timing model included
         self.Mmat = np.ones((len(self.toas), 2))
-        if self.backends is not None:
-            self.backend_flags = np.random.choice(self.backends, size=len(self.toas), replace=True)
+        self.backend_flags = np.random.choice(backends, size=len(self.toas), replace=True)
+        self.backend_flags = np.array([bf+'.'+str(int(f)) for bf, f in zip(self.backend_flags, self.freqs)])
+        self.backends = np.unique(self.backend_flags)
+        self.freqs = abs(self.freqs + np.random.normal(scale=200, size=len(self.toas)))
         self.theta = theta
         self.phi = phi
         self.pos = np.array([np.cos(phi)*np.sin(theta), np.sin(phi)*np.sin(theta), np.cos(theta)])
@@ -41,16 +42,10 @@ class Pulsar:
 
         if custom_noisedict is None:
             noisedict = {}
-            if self.backends is None:
-                noisedict[self.name+'_efac'] = 1.
-                noisedict[self.name+'_log10_tnequad'] = -8.
-                noisedict[self.name+'_log10_t2equad'] = -8.
-
-            else:
-                for backend in self.backends:
-                    noisedict[self.name+'_'+backend+'_efac'] = 1.
-                    noisedict[self.name+'_'+backend+'_log10_tnequad'] = -8.
-                    noisedict[self.name+'_'+backend+'_log10_t2equad'] = -8.
+            for backend in self.backends:
+                noisedict[self.name+'_'+backend+'_efac'] = 1.
+                noisedict[self.name+'_'+backend+'_log10_tnequad'] = -8.
+                noisedict[self.name+'_'+backend+'_log10_t2equad'] = -8.
             self.noisedict = noisedict
         else:
             keys = [*custom_noisedict]
