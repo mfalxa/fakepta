@@ -30,7 +30,7 @@ class Pulsar:
         self.backend_flags = np.random.choice(backends, size=len(self.toas), replace=True)
         self.backend_flags = np.array([bf+'.'+str(int(f)) for bf, f in zip(self.backend_flags, self.freqs)])
         self.backends = np.unique(self.backend_flags)
-        self.freqs = abs(self.freqs + np.random.normal(scale=200, size=len(self.toas)))
+        self.freqs = abs(self.freqs + np.random.normal(scale=100, size=len(self.toas)))
         self.theta = theta
         self.phi = phi
         self.pos = np.array([np.cos(phi)*np.sin(theta), np.sin(phi)*np.sin(theta), np.cos(theta)])
