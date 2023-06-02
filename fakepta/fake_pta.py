@@ -30,6 +30,8 @@ class Pulsar:
         self.backend_flags = np.random.choice(backends, size=len(self.toas), replace=True)
         self.backend_flags = np.array([bf+'.'+str(int(f)) for bf, f in zip(self.backend_flags, self.freqs)])
         self.backends = np.unique(self.backend_flags)
+        self.planetssb = None
+        self.pos_t = None
         self.freqs = abs(self.freqs + np.random.normal(scale=100, size=len(self.toas)))
         self.theta = theta
         self.phi = phi
@@ -352,6 +354,8 @@ def copy_array(psrs, custom_noisedict, custom_models=None):
         fake_psr.backend_flags = psr.backend_flags
         fake_psr.backends = np.unique(psr.backend_flags)
         fake_psr.freqs = psr.freqs
+        fake_psr.planetssb = psr.planetssb
+        fake_psr.pos_t = psr.pos_t
         fake_psr.init_noisedict(custom_noisedict)
         # OR set fake_psr.noisedict to be custom noisedict
         fake_psrs.append(fake_psr)
