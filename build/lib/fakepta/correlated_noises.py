@@ -64,12 +64,17 @@ def dipole(psrs):
                 orfs[i, j] = omc2
     return orfs
 
-def add_correlated_red_noise_gp(psrs, orf='hd', log10_A=-15., gamma=13/3, rn_components=30):
+def add_correlated_red_noise_gp(psrs, orf='hd', log10_A=-15., gamma=13/3, rn_components=30, modes=None):
 
     Tspan = np.amax([psr.toas.max() for psr in psrs]) - np.amin([psr.toas.min() for psr in psrs])
-    f = np.arange(1, rn_components+1) / Tspan
+    if modes is None:
+        f = np.arange(1, rn_components+1) / Tspan
+    else:
+        f = modes / Tspan
+        rn_components = len(modes)
     fyr = 1/sc.Julian_year
-    psd_rn = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma) / Tspan
+    df = np.diff(np.append(0., f))
+    psd_rn = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma) * df
     psd_rn = np.repeat(psd_rn, 2)
     ntoas = 100
     cov = np.zeros((len(psrs)*ntoas, len(psrs)*ntoas))
