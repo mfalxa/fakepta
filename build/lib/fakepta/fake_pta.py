@@ -77,13 +77,13 @@ class Pulsar:
                 if 'equad' in key:
                     self.noisedict[key] = np.random.uniform(-8., -5.)
         if self.backends is None:
-            self.toaerrs = np.sqrt(self.noisedict[self.name+'_efac']**2 * self.toaerrs**2 + 10**(2*self.noisedict[self.name+'_log10_tnequad']))
-            self.residuals += np.random.normal(scale=self.toaerrs)
+            toaerrs = np.sqrt(self.noisedict[self.name+'_efac']**2 * self.toaerrs**2 + 10**(2*self.noisedict[self.name+'_log10_tnequad']))
+            self.residuals += np.random.normal(scale=toaerrs)
         else:
             for backend in self.backends:
                 mask_backend = self.backend_flags == backend
-                self.toaerrs[mask_backend] = np.sqrt(self.noisedict[self.name+'_'+backend+'_efac']**2 * self.toaerrs[mask_backend]**2 + 10**(2*self.noisedict[self.name+'_'+backend+'_log10_tnequad']))
-                self.residuals[mask_backend] += np.random.normal(scale=self.toaerrs[mask_backend])
+                backend_toaerrs = np.sqrt(self.noisedict[self.name+'_'+backend+'_efac']**2 * self.toaerrs[mask_backend]**2 + 10**(2*self.noisedict[self.name+'_'+backend+'_log10_tnequad']))
+                self.residuals[mask_backend] += np.random.normal(scale=backend_toaerrs)
 
     def add_ecorr(self, dt=10, backends=None):
 
@@ -181,7 +181,7 @@ class Pulsar:
                 self.residuals[mask] += (freqf/self.freqs)**idx * coeffs[0, i] * np.cos(2*np.pi*f[0, i]*self.toas[mask])
                 self.residuals[mask] += (freqf/self.freqs)**idx * coeffs[1, i] * np.sin(2*np.pi*f[1, i]*self.toas[mask])
 
-    def add_time_correlated_noise_gp(self, signal='', log10_A=None, gamma=None, idx=4, components=None, freqf=1400, backend=None):
+    def add_time_correlated_noise_gp(self, signal='', log10_A=None, gamma=None, idx=4, components=None, freqf=1400, backend=None, return_cov=False):
 
         if backend is not None:
             signal = backend + '_' + signal
@@ -212,8 +212,11 @@ class Pulsar:
             basis[:, 2*i] = (freqf/self.freqs)**idx * np.cos(2*np.pi*f[i]*self.toas[mask])
             basis[:, 2*i+1] = (freqf/self.freqs)**idx * np.sin(2*np.pi*f[i]*self.toas[mask])
         cov = np.dot(basis, np.dot(np.diag(psd), basis.T))
-        gp = np.random.multivariate_normal(mean=np.zeros(len(self.toas[mask])), cov=cov)
-        self.residuals[mask] += gp
+        if return_cov:
+            return cov
+        else:
+            gp = np.random.multivariate_normal(mean=np.zeros(len(self.toas[mask])), cov=cov)
+            self.residuals[mask] += gp
         
     def add_cgw(self, costheta, phi, cosinc, log10_mc, log10_fgw, log10_h, phase0, psi, psrterm=False):
 
@@ -240,6 +243,37 @@ class Pulsar:
         decr = '0'+str(decr) if len(str(decr)) < 2 else str(decr)
 
         return 'J'+h+m+sign+decl+decr
+    
+    def make_noise_covariance_matrix(self):
+
+        if self.backends is None:
+            toaerrs = np.sqrt(self.noisedict[self.name+'_efac']**2 * self.toaerrs**2 + 10**(2*self.noisedict[self.name+'_log10_tnequad']))
+        else:
+            toaerrs = np.zeros(len(self.toas))
+            for backend in self.backends:
+                mask_backend = self.backend_flags == backend
+                toaerrs[mask_backend] = np.sqrt(self.noisedict[self.name+'_'+backend+'_efac']**2 * self.toaerrs[mask_backend]**2 + 10**(2*self.noisedict[self.name+'_'+backend+'_log10_tnequad']))
+        white_cov = toaerrs**2
+
+        red_cov = np.zeros((len(self.toas), len(self.toas)))
+        if self.custom_model['RN'] is not None:
+            red_cov += self.add_time_correlated_noise_gp(signal='red_noise', idx=0, components=self.custom_model['RN'], freqf=1400, return_cov=True)
+        if self.custom_model['DM'] is not None:
+            red_cov += self.add_time_correlated_noise_gp(signal='dm_gp', idx=2, components=self.custom_model['DM'], freqf=1400, return_cov=True)
+        if self.custom_model['Sv'] is not None:
+            red_cov += self.add_time_correlated_noise_gp(signal='chrom_gp', idx=4, components=self.custom_model['Sv'], freqf=1400, return_cov=True)
+        return white_cov, red_cov
+    
+    def draw_noise_model(self, residuals=None):
+        
+        white_cov, red_cov = self.make_noise_covariance_matrix()
+        cov = np.diag(white_cov) + red_cov
+        if residuals is None:
+            resids = np.random.multivariate_normal(mean=np.zeros(len(self.toas)), cov=cov)
+        else:
+            inv_cov = np.linalg.inv(cov)
+            resids = np.dot(red_cov.T, np.dot(inv_cov, residuals))
+        return resids
 
 
 def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, freqs=[1400], isotropic=False, backends=None, noisedict=None, custom_models=None, gp_noises=True):
