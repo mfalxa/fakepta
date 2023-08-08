@@ -64,6 +64,10 @@ def dipole(psrs):
                 orfs[i, j] = omc2
     return orfs
 
+def curn(psrs):
+    npsr = len(psrs)
+    return np.eye(npsr)
+
 def add_correlated_red_noise_gp(psrs, orf='hd', log10_A=-15., gamma=13/3, rn_components=30, modes=None):
 
     Tspan = np.amax([psr.toas.max() for psr in psrs]) - np.amin([psr.toas.min() for psr in psrs])
@@ -86,7 +90,7 @@ def add_correlated_red_noise_gp(psrs, orf='hd', log10_A=-15., gamma=13/3, rn_com
             basis_psr[:, 2*i] = np.cos(2*np.pi*f[i]*toas)
             basis_psr[:, 2*i+1] = np.sin(2*np.pi*f[i]*toas)
         basis.append(basis_psr)
-    orf_funcs = {'hd':hd, 'monopole':monopole, 'dipole':dipole}
+    orf_funcs = {'hd':hd, 'monopole':monopole, 'dipole':dipole, 'curn':curn}
     orfs = orf_funcs[orf](psrs)
     for i in range(len(psrs)):
         for j in range(len(psrs)):
