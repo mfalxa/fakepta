@@ -26,7 +26,8 @@ class Pulsar:
         self.flags = {}
         self.flags['pta'] = 'FAKE'
         # Initialize useless design matrix to avoid bug with enterprise if timing model included
-        self.Mmat = np.ones((len(self.toas), 2))
+        self.Mmat = np.ones((len(self.toas), 1))
+        self.fitpars = ['Offset']
         self.backend_flags = np.random.choice(backends, size=len(self.toas), replace=True)
         self.backend_flags = np.array([bf+'.'+str(int(f)) for bf, f in zip(self.backend_flags, self.freqs)])
         self.backends = np.unique(self.backend_flags)
@@ -384,6 +385,7 @@ def copy_array(psrs, custom_noisedict, custom_models=None):
         fake_psr.toaerrs = psr.toaerrs
         fake_psr.residuals = psr.residuals
         fake_psr.Mmat = psr.Mmat
+        fake_psr.fitpars = psr.fitpars
         fake_psr.pdist = psr.pdist
         fake_psr.backend_flags = psr.backend_flags
         fake_psr.backends = np.unique(psr.backend_flags)
