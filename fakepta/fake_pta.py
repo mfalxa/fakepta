@@ -298,7 +298,7 @@ class Pulsar:
         return resids
 
 
-def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, freqs=[1400], isotropic=False, backends=None, noisedict=None, custom_models=None, gp_noises=True):
+def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, freqs=[1400], isotropic=False, backends=None, noisedict=None, custom_model=None, gp_noises=True):
 
     if isotropic:
         # Fibonacci sequence on sphere
@@ -365,7 +365,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
     # Create pulsars and add noises
     psrs = []
     for i in range(npsrs):
-        if custom_models is None:
+        if custom_model is None:
             custom_model = None
         psr = Pulsar(toas[i], toaerr[i], np.arccos(costhetas[i]), phis[i], pdist[i], freqs=freqs, backends=backends[i], custom_noisedict=noisedict, custom_model=custom_model)
         print('Creating psr', psr.name)

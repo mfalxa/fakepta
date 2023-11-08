@@ -12,7 +12,7 @@ except:
 
 class Pulsar:
 
-    def __init__(self, toas, toaerr, theta, phi, pdist, freqs=[1400], custom_noisedict=None, custom_model=None, backends=['backend']):
+    def __init__(self, toas, toaerr, theta, phi, pdist, freqs=[1400], custom_noisedict=None, custom_model=None, tm_params=None, backends=['backend']):
 
         self.toas = toas
         self.toaerrs = toaerr * np.ones(len(self.toas))
@@ -25,8 +25,6 @@ class Pulsar:
         self.freqs = np.random.choice(freqs, replace=True, size=len(self.toas))
         self.flags = {}
         self.flags['pta'] = 'FAKE'
-        # Initialize useless design matrix to avoid bug with enterprise if timing model included
-        self.Mmat = np.ones((len(self.toas), 2))
         self.backend_flags = np.random.choice(backends, size=len(self.toas), replace=True)
         self.backend_flags = np.array([bf+'.'+str(int(f)) for bf, f in zip(self.backend_flags, self.freqs)])
         self.backends = np.unique(self.backend_flags)
@@ -38,6 +36,9 @@ class Pulsar:
         self.pos = np.array([np.cos(phi)*np.sin(theta), np.sin(phi)*np.sin(theta), np.cos(theta)])
         self.pdist = pdist
         self.name = self.get_psrname()
+        self.init_tm_pars(tm_params)
+        self.make_Mmat()
+        self.fitpars = [*self.tm_pars]
         self.init_noisedict(custom_noisedict)
 
     def init_noisedict(self, custom_noisedict=None):
@@ -56,6 +57,27 @@ class Pulsar:
                 if self.name in key:
                     noisedict[key] = custom_noisedict[key]
             self.noisedict = noisedict
+    
+    def init_tm_pars(self, timing_model):
+        self.tm_pars = {}
+        self.tm_pars['F0'] = (200, 1e-13)
+        self.tm_pars['F1'] = (-1e-15, 1e-20)
+        self.tm_pars['DM'] = (5, 5e-4)
+        self.tm_pars['DM1'] = (-1e-4, 1e-4)
+        self.tm_pars['DM2'] = (1e-5, 1e-5)
+        if timing_model is not None:
+            self.tm_pars.update(timing_model)
+
+    def make_Mmat(self, t0=0.):
+
+        npar = len([*self.tm_pars]) + 1
+        self.Mmat = np.zeros((len(self.toas), npar))
+        self.Mmat[:, 0] = np.ones(len(self.toas))
+        self.Mmat[:, 1] = -(self.toas - t0)
+        self.Mmat[:, 2] = -0.5 * (self.toas - t0)**2
+        self.Mmat[:, 3] = 1 / self.freqs**2
+        self.Mmat[:, 4] = (self.toas - t0) / self.freqs**2
+        self.Mmat[:, 5] = 0.5 * (self.toas - t0)**2 / self.freqs**2
 
     def update_position(self, theta, phi, update_name=False):
         self.theta = theta
@@ -384,6 +406,7 @@ def copy_array(psrs, custom_noisedict, custom_models=None):
         fake_psr.toaerrs = psr.toaerrs
         fake_psr.residuals = psr.residuals
         fake_psr.Mmat = psr.Mmat
+        fake_psr.fitpars = psr.fitpars
         fake_psr.pdist = psr.pdist
         fake_psr.backend_flags = psr.backend_flags
         fake_psr.backends = np.unique(psr.backend_flags)
