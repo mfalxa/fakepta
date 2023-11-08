@@ -1,4 +1,4 @@
-from .fake_pta import Pulsar
+from fakepta.fake_pta import Pulsar
 import numpy as np
 import scipy.constants as sc
 from scipy.interpolate import interp1d
@@ -68,7 +68,7 @@ def anisotropic(psrs, h_map):
 
     orfs = np.zeros((len(psrs), len(psrs)))
     npixels = len(h_map)
-    pixels = hp.pix2ang(hp.npix2nside, np.arange(npixels), nest=False)
+    pixels = hp.pix2ang(hp.npix2nside(npixels), np.arange(npixels), nest=False)
     gwtheta = pixels[0]
     gwphi = pixels[1]
     for i in range(len(psrs)):
@@ -77,9 +77,10 @@ def anisotropic(psrs, h_map):
                 k_ab = 2.
             else:
                 k_ab = 1.
-            fp_a, fc_a, _ = create_gw_antenna_pattern(psrs.pos[i], gwtheta, gwphi)
-            fp_b, fc_b, _ = create_gw_antenna_pattern(psrs.pos[j], gwtheta, gwphi)
+            fp_a, fc_a, _ = create_gw_antenna_pattern(psrs[i].pos, gwtheta, gwphi)
+            fp_b, fc_b, _ = create_gw_antenna_pattern(psrs[j].pos, gwtheta, gwphi)
             orfs[i, j] = 1.5 * k_ab * np.sum((fp_a*fp_b + fc_a*fc_b) * h_map) / npixels
+    return orfs
 
 def monopole(psrs):
     npsr = len(psrs)
@@ -147,4 +148,3 @@ def add_correlated_red_noise_gp(psrs, orf='hd', log10_A=-15., gamma=13/3, rn_com
         toas = np.linspace(psrs[k].toas.min(), psrs[k].toas.max(), ntoas)
         f = interp1d(toas, gwb_gp[k*ntoas:(k+1)*ntoas], kind='cubic')
         psrs[k].residuals += f(psrs[k].toas)
-
