@@ -144,43 +144,43 @@ class Pulsar:
                 mask = mask_t * backend_mask
                 self.residuals[mask] += 10**(2*self.noisedict[self.name+'_'+backend+'_ecorr']) * np.random.normal()
 
-    def add_red_noise(self, gp=True, log10_A=None, gamma=None, cos_phase=True, rand_coeff=False):
+    def add_red_noise(self, gp=True, log10_A=None, gamma=None):
 
         rn_components = self.custom_model['RN']
         if rn_components is not None:
             if gp:
                 self.add_time_correlated_noise_gp(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components)
             else:
-                self.add_time_correlated_noise(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, cos_phase=cos_phase, rand_coeff=rand_coeff)
+                self.add_time_correlated_noise(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components)
 
-    def add_dm_noise(self, gp=True, log10_A=None, gamma=None, cos_phase=True, rand_coeff=False):
+    def add_dm_noise(self, gp=True, log10_A=None, gamma=None):
 
         dm_components = self.custom_model['DM']
         if dm_components is not None:
             if gp:
                 self.add_time_correlated_noise_gp(signal='dm_gp', log10_A=log10_A, gamma=gamma, idx=2, components=dm_components)
             else:
-                self.add_time_correlated_noise(signal='dm_gp', log10_A=log10_A, gamma=gamma, idx=2, components=dm_components, cos_phase=cos_phase, rand_coeff=rand_coeff)
+                self.add_time_correlated_noise(signal='dm_gp', log10_A=log10_A, gamma=gamma, idx=2, components=dm_components)
 
-    def add_chromatic_noise(self, gp=True, log10_A=None, gamma=None, cos_phase=True, rand_coeff=False):
+    def add_chromatic_noise(self, gp=True, log10_A=None, gamma=None):
 
         sv_components = self.custom_model['Sv']
         if sv_components is not None:
             if gp:
                 self.add_time_correlated_noise_gp(signal='chrom_gp', log10_A=log10_A, gamma=gamma, idx=4, components=sv_components)
             else:
-                self.add_time_correlated_noise(signal='chrom_gp', log10_A=log10_A, gamma=gamma, idx=4, components=sv_components, cos_phase=cos_phase, rand_coeff=rand_coeff)
+                self.add_time_correlated_noise(signal='chrom_gp', log10_A=log10_A, gamma=gamma, idx=4, components=sv_components)
 
-    def add_system_noise(self, backend=None, gp=True, components=30, log10_A=None, gamma=None, cos_phase=True, rand_coeff=False):
+    def add_system_noise(self, backend=None, gp=True, components=30, log10_A=None, gamma=None):
 
         rn_components = components
         if rn_components is not None:
             if gp:
                 self.add_time_correlated_noise_gp(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, backend=backend)
             else:
-                self.add_time_correlated_noise(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, cos_phase=cos_phase, rand_coeff=rand_coeff, backend=backend)
+                self.add_time_correlated_noise(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, backend=backend)
 
-    def add_time_correlated_noise(self, signal='', log10_A=None, gamma=None, idx=4, components=None, freqf=1400, cos_phase=True, rand_coeff=False, backend=None):
+    def add_time_correlated_noise(self, signal='', log10_A=None, gamma=None, idx=4, components=None, freqf=1400, backend=None):
 
         if backend is not None:
             signal = backend + '_' + signal
@@ -205,18 +205,10 @@ class Pulsar:
         f = np.array([np.arange(1, components+1), np.arange(1, components+1)]) / self.Tspan
         fyr = 1/sc.Julian_year
         psd = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma) / self.Tspan
-        if rand_coeff:
-            coeffs = np.random.normal(loc=0., scale=np.sqrt(psd))
-        else:
-            coeffs = np.sqrt(psd)
-        if cos_phase:
-            for i in range(components):
-                phase = np.random.uniform(0., 2*np.pi)
-                self.residuals[mask] += (freqf/self.freqs)**idx * coeffs[0, i] * np.cos(2*np.pi*f[0, i]*self.toas[mask] + phase) * np.sqrt(2)
-        else:
-            for i in range(components):
-                self.residuals[mask] += (freqf/self.freqs)**idx * coeffs[0, i] * np.cos(2*np.pi*f[0, i]*self.toas[mask])
-                self.residuals[mask] += (freqf/self.freqs)**idx * coeffs[1, i] * np.sin(2*np.pi*f[1, i]*self.toas[mask])
+        coeffs = np.random.normal(loc=0., scale=np.sqrt(psd))
+        for i in range(components):
+            self.residuals[mask] += (freqf/self.freqs)**idx * coeffs[0, i] * np.cos(2*np.pi*f[0, i]*self.toas[mask])
+            self.residuals[mask] += (freqf/self.freqs)**idx * coeffs[1, i] * np.sin(2*np.pi*f[1, i]*self.toas[mask])
 
     def add_time_correlated_noise_gp(self, signal='', log10_A=None, gamma=None, idx=4, components=None, freqf=1400, backend=None, return_cov=False):
 
