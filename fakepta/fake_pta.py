@@ -71,6 +71,15 @@ class Pulsar:
                 noisedict[self.name+'_'+backend+'_log10_tnequad'] = custom_noisedict['log10_tnequad']
                 noisedict[self.name+'_'+backend+'_log10_t2equad'] = custom_noisedict['log10_t2equad']
             self.noisedict = noisedict
+        if np.any(['red_noise' in key for key in [*custom_noisedict]]):
+            noisedict[self.name+'_red_noise_log10_A'] = custom_noisedict['red_noise_log10_A']
+            noisedict[self.name+'_red_noise_gamma'] = custom_noisedict['red_noise_gamma']
+        if np.any(['dm_gp' in key for key in [*custom_noisedict]]):
+            noisedict[self.name+'_dm_gp_log10_A'] = custom_noisedict['dm_gp_log10_A']
+            noisedict[self.name+'_dm_gp_gamma'] = custom_noisedict['dm_gp_gamma']
+        if np.any(['chrom_gp' in key for key in [*custom_noisedict]]):
+            noisedict[self.name+'_chrom_gp_log10_A'] = custom_noisedict['chrom_gp_log10_A']
+            noisedict[self.name+'_chrom_gp_gamma'] = custom_noisedict['chrom_gp_gamma']
     
     def init_tm_pars(self, timing_model):
         self.tm_pars = {}
@@ -256,6 +265,25 @@ class Pulsar:
                             log10_h=log10_h, phase0=phase0, 
                             psi=psi, psrTerm=psrterm)
         self.residuals += cgw
+
+    def radec_to_thetaphi(ra, dec):
+
+        # RA in format : [H, M]
+        # dec in format : [deg, arcmin]
+
+        theta = np.pi/2 -  np.pi/180 * (dec[0] + dec[1]/60)
+        phi = 2*np.pi * (ra[0] + ra[1]/60) / 24
+        return theta, phi
+    
+    def thetaphi_to_radec(theta, phi):
+
+        # theta angle
+        # phi angle
+        DEC = (theta - np.pi/2) * 180 / np.pi
+        dec = [int(np.floor(DEC)), int((DEC-np.floor(DEC))*60)]
+        RA = phi * 24 / (2*np.pi)
+        ra = [int(np.floor(RA)), int((RA-np.floor(RA))*60)]
+        return ra, dec
 
     def get_psrname(self):
 
