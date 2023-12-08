@@ -57,6 +57,13 @@ class Pulsar:
                 if self.name in key:
                     noisedict[key] = custom_noisedict[key]
             self.noisedict = noisedict
+        elif np.all([backend+'_efac' in [*custom_noisedict] for backend in self.backends]):
+            noisedict = {}
+            for backend in self.backends:
+                noisedict[self.name+'_'+backend+'_efac'] = custom_noisedict[backend+'_efac']
+                noisedict[self.name+'_'+backend+'_log10_tnequad'] = custom_noisedict[backend+'_log10_tnequad']
+                noisedict[self.name+'_'+backend+'_log10_t2equad'] = custom_noisedict[backend+'_log10_t2equad']
+            self.noisedict = noisedict
         else:
             noisedict = {}
             for backend in self.backends:
