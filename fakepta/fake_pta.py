@@ -50,12 +50,19 @@ class Pulsar:
                 noisedict[self.name+'_'+backend+'_log10_tnequad'] = -8.
                 noisedict[self.name+'_'+backend+'_log10_t2equad'] = -8.
             self.noisedict = noisedict
-        else:
+        elif np.any([self.name in key for key in [*custom_noisedict]]):
             keys = [*custom_noisedict]
             noisedict = {}
             for key in keys:
                 if self.name in key:
                     noisedict[key] = custom_noisedict[key]
+            self.noisedict = noisedict
+        else:
+            noisedict = {}
+            for backend in self.backends:
+                noisedict[self.name+'_'+backend+'_efac'] = custom_noisedict['efac']
+                noisedict[self.name+'_'+backend+'_log10_tnequad'] = custom_noisedict['log10_tnequad']
+                noisedict[self.name+'_'+backend+'_log10_t2equad'] = custom_noisedict['log10_t2equad']
             self.noisedict = noisedict
     
     def init_tm_pars(self, timing_model):
@@ -102,10 +109,11 @@ class Pulsar:
             toaerrs = np.sqrt(self.noisedict[self.name+'_efac']**2 * self.toaerrs**2 + 10**(2*self.noisedict[self.name+'_log10_tnequad']))
             self.residuals += np.random.normal(scale=toaerrs)
         else:
+            toaerrs2 = np.zeros(len(self.toaerrs))
             for backend in self.backends:
                 mask_backend = self.backend_flags == backend
-                backend_toaerrs = np.sqrt(self.noisedict[self.name+'_'+backend+'_efac']**2 * self.toaerrs[mask_backend]**2 + 10**(2*self.noisedict[self.name+'_'+backend+'_log10_tnequad']))
-                self.residuals[mask_backend] += np.random.normal(scale=backend_toaerrs)
+                toaerrs2[mask_backend] = self.noisedict[self.name+'_'+backend+'_efac']**2 * self.toaerrs[mask_backend]**2 + 10**(2*self.noisedict[self.name+'_'+backend+'_log10_tnequad'])
+            self.residuals += np.random.normal(scale=toaerrs2**0.5)
 
     def add_ecorr(self, dt=10, backends=None):
 
