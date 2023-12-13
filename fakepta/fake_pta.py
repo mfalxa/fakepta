@@ -44,6 +44,7 @@ class Pulsar:
     def init_noisedict(self, custom_noisedict=None):
 
         if custom_noisedict is None:
+            custom_noisedict = {}
             noisedict = {}
             for backend in self.backends:
                 noisedict[self.name+'_'+backend+'_efac'] = 1.
