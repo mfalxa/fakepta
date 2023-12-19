@@ -16,14 +16,14 @@ class Pulsar:
 
         self.nepochs = len(toas)
         self.toas = np.repeat(toas, len(freqs))
-        self.toaerrs = np.repeat(toaerr * np.ones(len(self.toas)), len(freqs))
-        self.residuals = np.repeat(np.zeros(len(self.toas)), len(freqs))
+        self.toaerrs = toaerr * np.ones(len(self.toas))
+        self.residuals = np.zeros(len(self.toas))
         self.Tspan = np.amax(self.toas) - np.amin(self.toas)
         if custom_model is None:
             self.custom_model = {'RN':30, 'DM':100, 'Sv':None}
         else:
             self.custom_model = custom_model
-        self.freqs = np.tile(freqs, replace=True, size=self.nepochs)
+        self.freqs = np.tile(freqs, self.nepochs)
         self.flags = {}
         self.flags['pta'] = ['FAKE'] * len(self.toas)
         self.backend_flags = np.random.choice(backends, size=len(self.toas), replace=True)
@@ -128,8 +128,10 @@ class Pulsar:
             self.residuals += np.random.normal(scale=toaerrs)
         else:
             toaerrs2 = np.zeros(len(self.toaerrs))
+            print(len(self.backend_flags), len(toaerrs2), len(self.toas), len(self.residuals))
             for backend in self.backends:
                 mask_backend = self.backend_flags == backend
+                print(self.name+'_'+backend+'_efac')
                 toaerrs2[mask_backend] = self.noisedict[self.name+'_'+backend+'_efac']**2 * self.toaerrs[mask_backend]**2 + 10**(2*self.noisedict[self.name+'_'+backend+'_log10_tnequad'])
             self.residuals += np.random.normal(scale=toaerrs2**0.5)
 
@@ -355,7 +357,8 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
 
     # Number of TOAs for each pulsar
     if ntoas is None:
-        ntoas = np.random.randint(1000, 5000, npsrs)
+        cadence = 14 # days
+        ntoas = np.int32(Tobs * 365.25 / cadence)
     elif isinstance(ntoas, float) or isinstance(ntoas, int):
         ntoas = np.int32(ntoas * np.ones(npsrs))
 
@@ -365,8 +368,10 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
 
     # Make unevenly sampled TOAs if gaps is True
     if gaps:
-        toas = [np.linspace((Tmax - Tobs[i])*yr, Tmax*yr, 4*ntoas[i]) for i in range(npsrs)]
-        toas = [toas[i][np.sort(np.random.choice(np.arange(len(toas[i])), replace=False, size=ntoas[i]))] for i in range(npsrs)]
+        gap_odds = [True, True, True, False] # one out of five
+        keep = [np.random.choice(gap_odds, size=ntoa) for ntoa in ntoas]
+        toas = [np.linspace((Tmax - Tobs[i])*yr, Tmax*yr, ntoas[i]) for i in range(npsrs)]
+        toas = [toas[i][keep[i]] for i in range(npsrs)]
     else:
         toas = [np.linspace((Tmax - Tobs[i])*yr, Tmax*yr, ntoas[i]) for i in range(npsrs)]
     if toaerr is None:
@@ -385,7 +390,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
     if backends is None:
         backends = []
         for _ in range(npsrs):
-            n_backends = np.random.randint(1, 5)
+            n_backends = np.random.randint(1, 3)
             backends.append(['backend_'+str(k) for k in range(n_backends)])
     elif isinstance(backends, str):
         backends = [[backends]] * npsrs
