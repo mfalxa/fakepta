@@ -14,23 +14,24 @@ class Pulsar:
 
     def __init__(self, toas, toaerr, theta, phi, pdist, freqs=[1400], custom_noisedict=None, custom_model=None, tm_params=None, backends=['backend']):
 
-        self.toas = toas
-        self.toaerrs = toaerr * np.ones(len(self.toas))
-        self.residuals = np.zeros(len(self.toas))
+        self.nepochs = len(toas)
+        self.toas = np.repeat(toas, len(freqs))
+        self.toaerrs = np.repeat(toaerr * np.ones(len(self.toas)), len(freqs))
+        self.residuals = np.repeat(np.zeros(len(self.toas)), len(freqs))
         self.Tspan = np.amax(self.toas) - np.amin(self.toas)
         if custom_model is None:
             self.custom_model = {'RN':30, 'DM':100, 'Sv':None}
         else:
             self.custom_model = custom_model
-        self.freqs = np.random.choice(freqs, replace=True, size=len(self.toas))
+        self.freqs = np.tile(freqs, replace=True, size=self.nepochs)
         self.flags = {}
-        self.flags['pta'] = 'FAKE'
+        self.flags['pta'] = ['FAKE'] * len(self.toas)
         self.backend_flags = np.random.choice(backends, size=len(self.toas), replace=True)
         self.backend_flags = np.array([bf+'.'+str(int(f)) for bf, f in zip(self.backend_flags, self.freqs)])
         self.backends = np.unique(self.backend_flags)
         self.planetssb = None
         self.pos_t = None
-        self.freqs = abs(self.freqs + np.random.normal(scale=100, size=len(self.toas)))
+        self.freqs = abs(self.freqs + np.random.normal(scale=100, size=len(self.freqs)))
         self.theta = theta
         self.phi = phi
         self.pos = np.array([np.cos(phi)*np.sin(theta), np.sin(phi)*np.sin(theta), np.cos(theta)])
