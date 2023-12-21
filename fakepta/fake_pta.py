@@ -15,7 +15,7 @@ class Pulsar:
     def __init__(self, toas, toaerr, theta, phi, pdist, freqs=[1400], custom_noisedict=None, custom_model=None, tm_params=None, backends=['backend']):
 
         self.nepochs = len(toas)
-        self.toas = np.repeat(toas, len(freqs))
+        self.toas = np.repeat(toas, len(backends))
         self.toaerrs = toaerr * np.ones(len(self.toas))
         self.residuals = np.zeros(len(self.toas))
         self.Tspan = np.amax(self.toas) - np.amin(self.toas)
@@ -23,11 +23,12 @@ class Pulsar:
             self.custom_model = {'RN':30, 'DM':100, 'Sv':None}
         else:
             self.custom_model = custom_model
-        self.freqs = np.tile(freqs, self.nepochs)
         self.flags = {}
         self.flags['pta'] = ['FAKE'] * len(self.toas)
-        self.backend_flags = np.random.choice(backends, size=len(self.toas), replace=True)
-        self.backend_flags = np.array([bf+'.'+str(int(f)) for bf, f in zip(self.backend_flags, self.freqs)])
+        # self.freqs = np.tile(freqs, self.nepochs)
+        # self.backend_flags = np.random.choice(backends, size=len(self.toas), replace=True)
+        # self.backend_flags = np.array([bf+'.'+str(int(f)) for bf, f in zip(self.backend_flags, self.freqs)])
+        self.freqs, self.backend_flags = self.get_freqs_and_backends(freqs, backends)
         self.backends = np.unique(self.backend_flags)
         self.planetssb = None
         self.pos_t = None
@@ -41,6 +42,19 @@ class Pulsar:
         self.make_Mmat()
         self.fitpars = [*self.tm_pars]
         self.init_noisedict(custom_noisedict)
+
+    def get_freqs_and_backends(self, freqs, backends):
+
+        b_freqs = []
+        backend_flags = np.tile(backends, self.nepochs)
+        for i in range(len(backend_flags)):
+            try:
+                b_freqs.append(float(backend_flags[i].split('.')[-1]))
+            except:
+                obs_freqs = np.random.choice(freqs)
+                backend_flags[i] = backend_flags[i] + '.' + str(int(obs_freqs))
+                b_freqs.append(obs_freqs)
+        return np.array(b_freqs), backend_flags
 
     def init_noisedict(self, custom_noisedict=None):
 
