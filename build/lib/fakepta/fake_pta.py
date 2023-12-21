@@ -81,7 +81,7 @@ class Pulsar:
                 try:
                     noisedict[self.name+'_'+backend+'_log10_t2equad'] = custom_noisedict[backend+'_log10_t2equad']
                 except:
-                    print('No log10_t2equad found')
+                    continue
             self.noisedict = noisedict
         else:
             noisedict = {}
@@ -91,7 +91,7 @@ class Pulsar:
                 try:
                     noisedict[self.name+'_'+backend+'_log10_t2equad'] = custom_noisedict['log10_t2equad']
                 except:
-                    print('No log10_t2equad found')
+                    continue
             self.noisedict = noisedict
         if np.any(['red_noise' in key for key in [*custom_noisedict]]):
             noisedict[self.name+'_red_noise_log10_A'] = custom_noisedict['red_noise_log10_A']
