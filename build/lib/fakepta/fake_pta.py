@@ -78,14 +78,20 @@ class Pulsar:
             for backend in self.backends:
                 noisedict[self.name+'_'+backend+'_efac'] = custom_noisedict[backend+'_efac']
                 noisedict[self.name+'_'+backend+'_log10_tnequad'] = custom_noisedict[backend+'_log10_tnequad']
-                noisedict[self.name+'_'+backend+'_log10_t2equad'] = custom_noisedict[backend+'_log10_t2equad']
+                try:
+                    noisedict[self.name+'_'+backend+'_log10_t2equad'] = custom_noisedict[backend+'_log10_t2equad']
+                except:
+                    print('No log10_t2equad found')
             self.noisedict = noisedict
         else:
             noisedict = {}
             for backend in self.backends:
                 noisedict[self.name+'_'+backend+'_efac'] = custom_noisedict['efac']
                 noisedict[self.name+'_'+backend+'_log10_tnequad'] = custom_noisedict['log10_tnequad']
-                noisedict[self.name+'_'+backend+'_log10_t2equad'] = custom_noisedict['log10_t2equad']
+                try:
+                    noisedict[self.name+'_'+backend+'_log10_t2equad'] = custom_noisedict['log10_t2equad']
+                except:
+                    print('No log10_t2equad found')
             self.noisedict = noisedict
         if np.any(['red_noise' in key for key in [*custom_noisedict]]):
             noisedict[self.name+'_red_noise_log10_A'] = custom_noisedict['red_noise_log10_A']
@@ -100,10 +106,10 @@ class Pulsar:
     def init_tm_pars(self, timing_model):
         self.tm_pars = {}
         self.tm_pars['F0'] = (200, 1e-13)
-        self.tm_pars['F1'] = (-1e-15, 1e-20)
-        self.tm_pars['DM'] = (5, 5e-4)
-        self.tm_pars['DM1'] = (-1e-4, 1e-4)
-        self.tm_pars['DM2'] = (1e-5, 1e-5)
+        self.tm_pars['F1'] = (0., 1e-20)
+        self.tm_pars['DM'] = (0., 5e-4)
+        self.tm_pars['DM1'] = (0., 1e-4)
+        self.tm_pars['DM2'] = (0., 1e-5)
         if timing_model is not None:
             self.tm_pars.update(timing_model)
 
@@ -112,11 +118,11 @@ class Pulsar:
         npar = len([*self.tm_pars]) + 1
         self.Mmat = np.zeros((len(self.toas), npar))
         self.Mmat[:, 0] = np.ones(len(self.toas))
-        self.Mmat[:, 1] = -(self.toas - t0)
-        self.Mmat[:, 2] = -0.5 * (self.toas - t0)**2
+        self.Mmat[:, 1] = -(self.toas - t0) / self.tm_pars['F0'][0]
+        self.Mmat[:, 2] = -0.5 * (self.toas - t0)**2 / self.tm_pars['F0'][0]
         self.Mmat[:, 3] = 1 / self.freqs**2
-        self.Mmat[:, 4] = (self.toas - t0) / self.freqs**2
-        self.Mmat[:, 5] = 0.5 * (self.toas - t0)**2 / self.freqs**2
+        self.Mmat[:, 4] = (self.toas - t0) / self.freqs**2 / self.tm_pars['F0'][0]
+        self.Mmat[:, 5] = 0.5 * (self.toas - t0)**2 / self.freqs**2 / self.tm_pars['F0'][0]
 
     def update_position(self, theta, phi, update_name=False):
         self.theta = theta
@@ -142,10 +148,8 @@ class Pulsar:
             self.residuals += np.random.normal(scale=toaerrs)
         else:
             toaerrs2 = np.zeros(len(self.toaerrs))
-            print(len(self.backend_flags), len(toaerrs2), len(self.toas), len(self.residuals))
             for backend in self.backends:
                 mask_backend = self.backend_flags == backend
-                print(self.name+'_'+backend+'_efac')
                 toaerrs2[mask_backend] = self.noisedict[self.name+'_'+backend+'_efac']**2 * self.toaerrs[mask_backend]**2 + 10**(2*self.noisedict[self.name+'_'+backend+'_log10_tnequad'])
             self.residuals += np.random.normal(scale=toaerrs2**0.5)
 
