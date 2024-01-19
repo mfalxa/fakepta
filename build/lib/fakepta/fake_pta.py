@@ -12,7 +12,7 @@ except:
 
 class Pulsar:
 
-    def __init__(self, toas, toaerr, theta, phi, pdist, freqs=[1400], custom_noisedict=None, custom_model=None, tm_params=None, backends=['backend']):
+    def __init__(self, toas, toaerr, theta, phi, pdist=(1., 0.2), freqs=[1400], custom_noisedict=None, custom_model=None, tm_params=None, backends=['backend']):
 
         self.nepochs = len(toas)
         self.toas = np.repeat(toas, len(backends))
@@ -94,15 +94,30 @@ class Pulsar:
                     continue
             self.noisedict = noisedict
         if np.any(['red_noise' in key for key in [*custom_noisedict]]):
-            noisedict[self.name+'_red_noise_log10_A'] = custom_noisedict['red_noise_log10_A']
-            noisedict[self.name+'_red_noise_gamma'] = custom_noisedict['red_noise_gamma']
+            try:
+                key_amp = self.name+'_red_noise_log10_A' if self.name+'_red_noise_log10_A' in [*custom_noisedict] else 'red_noise_log10_A'
+                key_gam = self.name+'_red_noise_gamma' if self.name+'_red_noise_gamma' in [*custom_noisedict] else 'red_noise_gamma'
+                noisedict[self.name+'_red_noise_log10_A'] = custom_noisedict[key_amp]
+                noisedict[self.name+'_red_noise_gamma'] = custom_noisedict[key_gam]
+            except:
+                pass
         if np.any(['dm_gp' in key for key in [*custom_noisedict]]):
-            noisedict[self.name+'_dm_gp_log10_A'] = custom_noisedict['dm_gp_log10_A']
-            noisedict[self.name+'_dm_gp_gamma'] = custom_noisedict['dm_gp_gamma']
+            try:
+                key_amp = self.name+'_dm_gp_log10_A' if self.name+'_dm_gp_log10_A' in [*custom_noisedict] else 'dm_gp_log10_A'
+                key_gam = self.name+'_dm_gp_gamma' if self.name+'_dm_gp_gamma' in [*custom_noisedict] else 'dm_gp_gamma'
+                noisedict[self.name+'_dm_gp_log10_A'] = custom_noisedict[key_amp]
+                noisedict[self.name+'_dm_gp_gamma'] = custom_noisedict[key_gam]
+            except:
+                pass
         if np.any(['chrom_gp' in key for key in [*custom_noisedict]]):
-            noisedict[self.name+'_chrom_gp_log10_A'] = custom_noisedict['chrom_gp_log10_A']
-            noisedict[self.name+'_chrom_gp_gamma'] = custom_noisedict['chrom_gp_gamma']
-    
+            try:
+                key_amp = self.name+'_chrom_gp_log10_A' if self.name+'_chrom_gp_log10_A' in [*custom_noisedict] else 'chrom_gp_log10_A'
+                key_gam = self.name+'_chrom_gp_gamma' if self.name+'_chrom_gp_gamma' in [*custom_noisedict] else 'chrom_gp_gamma'
+                noisedict[self.name+'_chrom_gp_log10_A'] = custom_noisedict[key_amp]
+                noisedict[self.name+'_chrom_gp_gamma'] = custom_noisedict[key_gam]
+            except:
+                pass
+
     def init_tm_pars(self, timing_model):
         self.tm_pars = {}
         self.tm_pars['F0'] = (200, 1e-13)
@@ -175,43 +190,43 @@ class Pulsar:
                 mask = mask_t * backend_mask
                 self.residuals[mask] += 10**(2*self.noisedict[self.name+'_'+backend+'_ecorr']) * np.random.normal()
 
-    def add_red_noise(self, gp=True, log10_A=None, gamma=None):
+    def add_red_noise(self, gp=True, log10_A=None, gamma=None, custom_psd=None, f_psd=None):
 
         rn_components = self.custom_model['RN']
         if rn_components is not None:
             if gp:
-                self.add_time_correlated_noise_gp(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components)
+                self.add_time_correlated_noise_gp(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, custom_psd=custom_psd, f_psd=f_psd)
             else:
-                self.add_time_correlated_noise(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components)
+                self.add_time_correlated_noise(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, custom_psd=custom_psd, f_psd=f_psd)
 
-    def add_dm_noise(self, gp=True, log10_A=None, gamma=None):
+    def add_dm_noise(self, gp=True, log10_A=None, gamma=None, custom_psd=None, f_psd=None):
 
         dm_components = self.custom_model['DM']
         if dm_components is not None:
             if gp:
-                self.add_time_correlated_noise_gp(signal='dm_gp', log10_A=log10_A, gamma=gamma, idx=2, components=dm_components)
+                self.add_time_correlated_noise_gp(signal='dm_gp', log10_A=log10_A, gamma=gamma, idx=2, components=dm_components, custom_psd=custom_psd, f_psd=f_psd)
             else:
-                self.add_time_correlated_noise(signal='dm_gp', log10_A=log10_A, gamma=gamma, idx=2, components=dm_components)
+                self.add_time_correlated_noise(signal='dm_gp', log10_A=log10_A, gamma=gamma, idx=2, components=dm_components, custom_psd=custom_psd, f_psd=f_psd)
 
-    def add_chromatic_noise(self, gp=True, log10_A=None, gamma=None):
+    def add_chromatic_noise(self, gp=True, log10_A=None, gamma=None, custom_psd=None, f_psd=None):
 
         sv_components = self.custom_model['Sv']
         if sv_components is not None:
             if gp:
-                self.add_time_correlated_noise_gp(signal='chrom_gp', log10_A=log10_A, gamma=gamma, idx=4, components=sv_components)
+                self.add_time_correlated_noise_gp(signal='chrom_gp', log10_A=log10_A, gamma=gamma, idx=4, components=sv_components, custom_psd=custom_psd, f_psd=f_psd)
             else:
-                self.add_time_correlated_noise(signal='chrom_gp', log10_A=log10_A, gamma=gamma, idx=4, components=sv_components)
+                self.add_time_correlated_noise(signal='chrom_gp', log10_A=log10_A, gamma=gamma, idx=4, components=sv_components, custom_psd=custom_psd, f_psd=f_psd)
 
-    def add_system_noise(self, backend=None, gp=True, components=30, log10_A=None, gamma=None):
+    def add_system_noise(self, backend=None, gp=True, components=30, log10_A=None, gamma=None, custom_psd=None, f_psd=None):
 
         rn_components = components
         if rn_components is not None:
             if gp:
-                self.add_time_correlated_noise_gp(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, backend=backend)
+                self.add_time_correlated_noise_gp(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, backend=backend, custom_psd=custom_psd, f_psd=f_psd)
             else:
-                self.add_time_correlated_noise(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, backend=backend)
+                self.add_time_correlated_noise(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, backend=backend, custom_psd=custom_psd, f_psd=f_psd)
 
-    def add_time_correlated_noise(self, signal='', log10_A=None, gamma=None, idx=4, components=None, freqf=1400, backend=None):
+    def add_time_correlated_noise(self, signal='', log10_A=None, gamma=None, idx=4, components=None, freqf=1400, backend=None, custom_psd=None, f_psd=None):
 
         if backend is not None:
             signal = backend + '_' + signal
@@ -233,15 +248,25 @@ class Pulsar:
             else:
                 gamma = np.random.uniform(1., 6.)
                 self.noisedict[self.name+'_'+str(signal)+'_gamma'] = gamma
-        f = np.array([np.arange(1, components+1), np.arange(1, components+1)]) / self.Tspan
-        fyr = 1/sc.Julian_year
-        psd = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma) / self.Tspan
+        if f_psd is None:
+            f = np.arange(1, components+1) / self.Tspan
+        else:
+            f = f_psd
+        df = np.diff(np.append(0., f))
+        if custom_psd is not None:
+            # assert f_psd is None, '"f_psd" must not be None. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
+            assert len(custom_psd) == len(f), '"custom_psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
+            psd = custom_psd * df
+        else:
+            fyr = 1/sc.Julian_year
+            psd = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma) * df
+        psd = np.repeat(psd, 2)
         coeffs = np.random.normal(loc=0., scale=np.sqrt(psd))
         for i in range(components):
             self.residuals[mask] += (freqf/self.freqs)**idx * coeffs[0, i] * np.cos(2*np.pi*f[0, i]*self.toas[mask])
             self.residuals[mask] += (freqf/self.freqs)**idx * coeffs[1, i] * np.sin(2*np.pi*f[1, i]*self.toas[mask])
 
-    def add_time_correlated_noise_gp(self, signal='', log10_A=None, gamma=None, idx=4, components=None, freqf=1400, backend=None, return_cov=False):
+    def add_time_correlated_noise_gp(self, signal='', log10_A=None, gamma=None, idx=4, components=None, freqf=1400, backend=None, custom_psd=None, f_psd=None, return_cov=False):
 
         if backend is not None:
             signal = backend + '_' + signal
@@ -263,9 +288,17 @@ class Pulsar:
             else:
                 gamma = np.random.uniform(1., 6.)
                 self.noisedict[self.name+'_'+str(signal)+'_gamma'] = gamma
-        f = np.arange(1, components+1) / self.Tspan
-        fyr = 1/sc.Julian_year
-        psd = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma) / self.Tspan
+        if f_psd is None:
+            f = np.arange(1, components+1) / self.Tspan
+        else:
+            f = f_psd
+        df = np.diff(np.append(0., f))
+        if custom_psd is not None:
+            assert len(custom_psd) == len(f), '"custom_psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
+            psd = custom_psd * df
+        else:
+            fyr = 1/sc.Julian_year
+            psd = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma) * df
         psd = np.repeat(psd, 2)
         basis = np.zeros((len(self.toas[mask]), 2*components))
         for i in range(components):
@@ -463,6 +496,7 @@ def copy_array(psrs, custom_noisedict, custom_models=None):
     for psr in psrs:
         fake_psr = Pulsar(psr.toas, 10**(-6), psr.theta, phi=psr.phi, pdist=1., backends=np.unique(psr.backend_flags), custom_model=custom_models[psr.name])
         fake_psr.name = psr.name
+        fake_psr.toas = psr.toas
         fake_psr.toaerrs = psr.toaerrs
         fake_psr.residuals = psr.residuals
         fake_psr.Mmat = psr.Mmat
