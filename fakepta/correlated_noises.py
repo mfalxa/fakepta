@@ -118,8 +118,8 @@ def add_correlated_red_noise_gp(psrs, orf='hd', log10_A=-15., gamma=13/3, rn_com
         f = f_psd
     df = np.diff(np.append(0., f))
     if custom_psd is not None:
-        assert f_psd is None, '"f_psd" must not be None. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
-        assert len(custom_psd) == len(f_psd), '"custom_psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
+        # assert f_psd is None, '"f_psd" must not be None. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
+        assert len(custom_psd) == len(f), '"custom_psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
         psd_gwb = custom_psd * df
     else:
         psd_gwb = powerlaw(f, log10_A, gamma) * df
