@@ -108,8 +108,8 @@ def powerlaw(f, log10_A, gamma):
     psd_rn = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma)
     return psd_rn
 
-# Noise generating function
-def add_correlated_red_noise_gp(psrs, orf='hd', log10_A=-15., gamma=13/3, rn_components=30, custom_psd=None, f_psd=None, h_map=None):
+# Noise generating function from covariance matrix
+def add_common_correlated_noise_gp(psrs, orf='hd', log10_A=-15., gamma=13/3, rn_components=30, custom_psd=None, f_psd=None, h_map=None):
 
     Tspan = np.amax([psr.toas.max() for psr in psrs]) - np.amin([psr.toas.min() for psr in psrs])
     if f_psd is None:
@@ -148,3 +148,32 @@ def add_correlated_red_noise_gp(psrs, orf='hd', log10_A=-15., gamma=13/3, rn_com
         toas = np.linspace(psrs[k].toas.min(), psrs[k].toas.max(), ntoas)
         f = interp1d(toas, gwb_gp[k*ntoas:(k+1)*ntoas], kind='cubic')
         psrs[k].residuals += f(psrs[k].toas)
+
+# Noise generating function
+def add_common_correlated_noise(psrs, orf='hd', log10_A=-15., gamma=13/3, idx=0, components=30, freqf=1400, custom_psd=None, f_psd=None, h_map=None):
+
+    Tspan = np.amax([psr.toas.max() for psr in psrs]) - np.amin([psr.toas.min() for psr in psrs])
+    if f_psd is None:
+        f = np.arange(1, components+1) / Tspan
+    else:
+        f = f_psd
+    df = np.diff(np.append(0., f))
+    if custom_psd is not None:
+        # assert f_psd is None, '"f_psd" must not be None. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
+        assert len(custom_psd) == len(f), '"custom_psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
+        psd_gwb = custom_psd * df
+    else:
+        psd_gwb = powerlaw(f, log10_A, gamma) * df
+    psd_gwb = np.repeat(psd_gwb, 2)
+    coeffs = np.sqrt(psd_gwb)
+    orf_funcs = {'hd':hd, 'monopole':monopole, 'dipole':dipole, 'curn':curn}
+    if orf in [*orf_funcs]:
+        orfs = orf_funcs[orf](psrs)
+    elif orf == 'anisotropic':
+        orfs = anisotropic(psrs, h_map)
+    for i in range(components):
+        orf_corr_sin = np.random.multivariate_normal(mean=np.zeros(len(psrs)), cov=orfs)
+        orf_corr_cos = np.random.multivariate_normal(mean=np.zeros(len(psrs)), cov=orfs)
+        for n, psr in enumerate(psrs):
+            psr.residuals += orf_corr_cos[n] * (freqf/psr.freqs)**idx * coeffs[2*i] * np.cos(2*np.pi*f[i]*psr.toas)
+            psr.residuals += orf_corr_sin[n] * (freqf/psr.freqs)**idx * coeffs[2*i+1] * np.sin(2*np.pi*f[i]*psr.toas)

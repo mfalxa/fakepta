@@ -388,7 +388,7 @@ class Pulsar:
         return resids
 
 
-def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, freqs=[1400], isotropic=False, backends=None, noisedict=None, custom_model=None, gp_noises=True):
+def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, freqs=[1400], isotropic=False, backends=None, noisedict=None, custom_model=None, gp_noises=False):
 
     if isotropic:
         # Fibonacci sequence on sphere
