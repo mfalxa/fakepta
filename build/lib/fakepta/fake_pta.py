@@ -263,8 +263,8 @@ class Pulsar:
         psd = np.repeat(psd, 2)
         coeffs = np.random.normal(loc=0., scale=np.sqrt(psd))
         for i in range(components):
-            self.residuals[mask] += (freqf/self.freqs)**idx * coeffs[0, i] * np.cos(2*np.pi*f[0, i]*self.toas[mask])
-            self.residuals[mask] += (freqf/self.freqs)**idx * coeffs[1, i] * np.sin(2*np.pi*f[1, i]*self.toas[mask])
+            self.residuals[mask] += (freqf/self.freqs)**idx * coeffs[2*i] * np.cos(2*np.pi*f[i]*self.toas[mask])
+            self.residuals[mask] += (freqf/self.freqs)**idx * coeffs[2*i+1] * np.sin(2*np.pi*f[i]*self.toas[mask])
 
     def add_time_correlated_noise_gp(self, signal='', log10_A=None, gamma=None, idx=4, components=None, freqf=1400, backend=None, custom_psd=None, f_psd=None, return_cov=False):
 
