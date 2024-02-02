@@ -464,12 +464,17 @@ class Pulsar:
         sig = np.zeros(len(self.toas))
         idx = {'red_noise':0, 'dm_gp':2, 'chrom_gp':4}
         for signal in signals:
-            f = self.signal_model[signal]['f']
-            df = np.diff(np.append(0., f))
-            c = self.signal_model[signal]['fourier']
-            for c_k, f_k, df_k in zip(c.T, f, df):
-                sig += df_k * c_k[0] * (freqf/self.freqs)**idx[signal] * np.cos(2*np.pi*f_k * self.toas)
-                sig += df_k * c_k[1] * (freqf/self.freqs)**idx[signal] * np.sin(2*np.pi*f_k * self.toas)
+            if signal == 'cgw':
+                for ncgw in len(self.signal_model['cgw']):
+                    sig += det.cw_delay(self.toas, self.pos, self.pdist,
+                                        **self.signal_model['cgw'][str(ncgw)])
+            if signal in ['red_noise', 'dm_gp', 'chrom_gp']:
+                f = self.signal_model[signal]['f']
+                df = np.diff(np.append(0., f))
+                c = self.signal_model[signal]['fourier']
+                for c_k, f_k, df_k in zip(c.T, f, df):
+                    sig += df_k * c_k[0] * (freqf/self.freqs)**idx[signal] * np.cos(2*np.pi*f_k * self.toas)
+                    sig += df_k * c_k[1] * (freqf/self.freqs)**idx[signal] * np.sin(2*np.pi*f_k * self.toas)
         return sig
 
 

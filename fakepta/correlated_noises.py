@@ -185,7 +185,7 @@ def add_common_correlated_noise(psrs, orf='hd', log10_A=-15., gamma=13/3, idx=0,
         orf_corr_sin = np.random.multivariate_normal(mean=np.zeros(len(psrs)), cov=orfs)
         orf_corr_cos = np.random.multivariate_normal(mean=np.zeros(len(psrs)), cov=orfs)
         for n, psr in enumerate(psrs):
-            psr.signal_model['common']['fourier'][0, i] = orf_corr_cos[n] * coeffs[2*i]
-            psr.signal_model['common']['fourier'][1, i] = orf_corr_sin[n] * coeffs[2*i+1]
+            psr.signal_model['common']['fourier'][0, i] = orf_corr_cos[n] * coeffs[2*i] / df[i]**0.5
+            psr.signal_model['common']['fourier'][1, i] = orf_corr_sin[n] * coeffs[2*i+1] / df[i]**0.5
             psr.residuals += orf_corr_cos[n] * (freqf/psr.freqs)**idx * df[i]**0.5 * coeffs[2*i] * np.cos(2*np.pi*f[i]*psr.toas)
             psr.residuals += orf_corr_sin[n] * (freqf/psr.freqs)**idx * df[i]**0.5 * coeffs[2*i+1] * np.sin(2*np.pi*f[i]*psr.toas)
