@@ -161,9 +161,19 @@ def add_common_correlated_noise(psrs, orf='hd', log10_A=-15., gamma=13/3, idx=0,
     if custom_psd is not None:
         # assert f_psd is None, '"f_psd" must not be None. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
         assert len(custom_psd) == len(f), '"custom_psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
-        psd_gwb = custom_psd * df
+        psd_gwb = custom_psd
     else:
-        psd_gwb = powerlaw(f, log10_A, gamma) * df
+        psd_gwb = powerlaw(f, log10_A, gamma)
+
+    for psr in psrs:
+        psr.signal_model['common'] = {}
+        psr.signal_model['common']['orf'] = orf
+        psr.signal_model['common']['hmap'] = h_map
+        psr.signal_model['common']['f'] = f
+        psr.signal_model['common']['psd'] = psd_gwb
+        psr.signal_model['common']['fourier'] = np.vstack((np.zeros(components), np.zeros(components)))
+        psr.signal_model['common']['nbin'] = components
+    
     psd_gwb = np.repeat(psd_gwb, 2)
     coeffs = np.sqrt(psd_gwb)
     orf_funcs = {'hd':hd, 'monopole':monopole, 'dipole':dipole, 'curn':curn}
@@ -175,5 +185,7 @@ def add_common_correlated_noise(psrs, orf='hd', log10_A=-15., gamma=13/3, idx=0,
         orf_corr_sin = np.random.multivariate_normal(mean=np.zeros(len(psrs)), cov=orfs)
         orf_corr_cos = np.random.multivariate_normal(mean=np.zeros(len(psrs)), cov=orfs)
         for n, psr in enumerate(psrs):
-            psr.residuals += orf_corr_cos[n] * (freqf/psr.freqs)**idx * coeffs[2*i] * np.cos(2*np.pi*f[i]*psr.toas)
-            psr.residuals += orf_corr_sin[n] * (freqf/psr.freqs)**idx * coeffs[2*i+1] * np.sin(2*np.pi*f[i]*psr.toas)
+            psr.signal_model['common']['fourier'][0, i] = orf_corr_cos[n] * coeffs[2*i]
+            psr.signal_model['common']['fourier'][1, i] = orf_corr_sin[n] * coeffs[2*i+1]
+            psr.residuals += orf_corr_cos[n] * (freqf/psr.freqs)**idx * df[i]**0.5 * coeffs[2*i] * np.cos(2*np.pi*f[i]*psr.toas)
+            psr.residuals += orf_corr_sin[n] * (freqf/psr.freqs)**idx * df[i]**0.5 * coeffs[2*i+1] * np.sin(2*np.pi*f[i]*psr.toas)

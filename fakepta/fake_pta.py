@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import pickle
-import json
+import pickle, json
+from scipy.optimize import fsolve
 from enterprise_extensions import deterministic as det
 import scipy.constants as sc
 try:
@@ -23,6 +23,7 @@ class Pulsar:
             self.custom_model = {'RN':30, 'DM':100, 'Sv':None}
         else:
             self.custom_model = custom_model
+        self.signal_model = {}
         self.flags = {}
         self.flags['pta'] = ['FAKE'] * len(self.toas)
         # self.freqs = np.tile(freqs, self.nepochs)
@@ -119,6 +120,14 @@ class Pulsar:
                 pass
 
     def init_tm_pars(self, timing_model):
+
+        dt = np.mean(np.diff(self.toas))
+        f_diff = lambda F0 : dt*F0 - np.floor(dt*F0)
+        F0_init = np.random.uniform(200, 300)
+        F0 = fsolve(f_diff, F0_init, xtol=1e-12)
+
+        self.tm_pars = {}
+        self.tm_pars['F0'] = (F0, 1e-12)
         self.tm_pars = {}
         self.tm_pars['F0'] = (200, 1e-13)
         self.tm_pars['F1'] = (0., 1e-20)
@@ -190,41 +199,81 @@ class Pulsar:
                 mask = mask_t * backend_mask
                 self.residuals[mask] += 10**(2*self.noisedict[self.name+'_'+backend+'_ecorr']) * np.random.normal()
 
-    def add_red_noise(self, gp=True, log10_A=None, gamma=None, custom_psd=None, f_psd=None):
+    def add_red_noise(self, gp=False, log10_A=None, gamma=None, custom_psd=None, f_psd=None):
 
         rn_components = self.custom_model['RN']
         if rn_components is not None:
-            if gp:
-                self.add_time_correlated_noise_gp(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, custom_psd=custom_psd, f_psd=f_psd)
-            else:
-                self.add_time_correlated_noise(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, custom_psd=custom_psd, f_psd=f_psd)
 
-    def add_dm_noise(self, gp=True, log10_A=None, gamma=None, custom_psd=None, f_psd=None):
+            if custom_psd is not None:
+                psd = custom_psd
+            else:
+                if 'red_noise' in self.signal_model:
+                    psd = self.signal_model['red_noise']['psd']
+                    f_psd = self.signal_model['red_noise']['f']
+                else:
+                    psd = None
+
+            if gp:
+                self.add_time_correlated_noise_gp(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, custom_psd=psd, f_psd=f_psd)
+            else:
+                self.add_time_correlated_noise(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, custom_psd=psd, f_psd=f_psd)
+
+    def add_dm_noise(self, gp=False, log10_A=None, gamma=None, custom_psd=None, f_psd=None):
 
         dm_components = self.custom_model['DM']
         if dm_components is not None:
-            if gp:
-                self.add_time_correlated_noise_gp(signal='dm_gp', log10_A=log10_A, gamma=gamma, idx=2, components=dm_components, custom_psd=custom_psd, f_psd=f_psd)
+            
+            if custom_psd is not None:
+                psd = custom_psd
             else:
-                self.add_time_correlated_noise(signal='dm_gp', log10_A=log10_A, gamma=gamma, idx=2, components=dm_components, custom_psd=custom_psd, f_psd=f_psd)
+                if 'dm_gp' in self.signal_model:
+                    psd = self.signal_model['dm_gp']['psd']
+                    f_psd = self.signal_model['dm_gp']['f']
+                else:
+                    psd = None
 
-    def add_chromatic_noise(self, gp=True, log10_A=None, gamma=None, custom_psd=None, f_psd=None):
+            if gp:
+                self.add_time_correlated_noise_gp(signal='dm_gp', log10_A=log10_A, gamma=gamma, idx=2, components=dm_components, custom_psd=psd, f_psd=f_psd)
+            else:
+                self.add_time_correlated_noise(signal='dm_gp', log10_A=log10_A, gamma=gamma, idx=2, components=dm_components, custom_psd=psd, f_psd=f_psd)
+
+    def add_chromatic_noise(self, gp=False, log10_A=None, gamma=None, custom_psd=None, f_psd=None):
 
         sv_components = self.custom_model['Sv']
         if sv_components is not None:
-            if gp:
-                self.add_time_correlated_noise_gp(signal='chrom_gp', log10_A=log10_A, gamma=gamma, idx=4, components=sv_components, custom_psd=custom_psd, f_psd=f_psd)
+            
+            if custom_psd is not None:
+                psd = custom_psd
             else:
-                self.add_time_correlated_noise(signal='chrom_gp', log10_A=log10_A, gamma=gamma, idx=4, components=sv_components, custom_psd=custom_psd, f_psd=f_psd)
+                if 'chrom_gp' in self.signal_model:
+                    psd = self.signal_model['chrom_gp']['psd']
+                    f_psd = self.signal_model['chrom_gp']['f']
+                else:
+                    psd = None
+
+            if gp:
+                self.add_time_correlated_noise_gp(signal='chrom_gp', log10_A=log10_A, gamma=gamma, idx=4, components=sv_components, custom_psd=psd, f_psd=f_psd)
+            else:
+                self.add_time_correlated_noise(signal='chrom_gp', log10_A=log10_A, gamma=gamma, idx=4, components=sv_components, custom_psd=psd, f_psd=f_psd)
 
     def add_system_noise(self, backend=None, gp=True, components=30, log10_A=None, gamma=None, custom_psd=None, f_psd=None):
 
         rn_components = components
         if rn_components is not None:
-            if gp:
-                self.add_time_correlated_noise_gp(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, backend=backend, custom_psd=custom_psd, f_psd=f_psd)
+            
+            if custom_psd is not None:
+                psd = custom_psd
             else:
-                self.add_time_correlated_noise(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, backend=backend, custom_psd=custom_psd, f_psd=f_psd)
+                if 'system_noise_'+str(backend) in self.signal_model:
+                    psd = self.signal_model['system_noise_'+str(backend)]['psd']
+                    f_psd = self.signal_model['system_noise_'+str(backend)]['f']
+                else:
+                    psd = None
+
+            if gp:
+                self.add_time_correlated_noise_gp(signal='system_noise_'+str(backend), log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, backend=backend, custom_psd=psd, f_psd=f_psd)
+            else:
+                self.add_time_correlated_noise(signal='system_noise_'+str(backend), log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, backend=backend, custom_psd=psd, f_psd=f_psd)
 
     def add_time_correlated_noise(self, signal='', log10_A=None, gamma=None, idx=4, components=None, freqf=1400, backend=None, custom_psd=None, f_psd=None):
 
@@ -256,15 +305,23 @@ class Pulsar:
         if custom_psd is not None:
             # assert f_psd is None, '"f_psd" must not be None. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
             assert len(custom_psd) == len(f), '"custom_psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
-            psd = custom_psd * df
+            psd = custom_psd
         else:
             fyr = 1/sc.Julian_year
-            psd = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma) * df
+            psd = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma)
+        
         psd = np.repeat(psd, 2)
         coeffs = np.random.normal(loc=0., scale=np.sqrt(psd))
+
+        self.signal_model[signal] = {}
+        self.signal_model[signal]['f'] = f
+        self.signal_model[signal]['psd'] = psd
+        self.signal_model[signal]['fourier'] = np.vstack((coeffs[::2] / df**0.5, coeffs[1::2] / df**0.5))
+        self.signal_model[signal]['nbin'] = components
+        
         for i in range(components):
-            self.residuals[mask] += (freqf/self.freqs)**idx * coeffs[2*i] * np.cos(2*np.pi*f[i]*self.toas[mask])
-            self.residuals[mask] += (freqf/self.freqs)**idx * coeffs[2*i+1] * np.sin(2*np.pi*f[i]*self.toas[mask])
+            self.residuals[mask] += (freqf/self.freqs)**idx * df[i]**0.5 * coeffs[2*i] * np.cos(2*np.pi*f[i]*self.toas[mask])
+            self.residuals[mask] += (freqf/self.freqs)**idx * df[i]**0.5 * coeffs[2*i+1] * np.sin(2*np.pi*f[i]*self.toas[mask])
 
     def add_time_correlated_noise_gp(self, signal='', log10_A=None, gamma=None, idx=4, components=None, freqf=1400, backend=None, custom_psd=None, f_psd=None, return_cov=False):
 
@@ -295,11 +352,18 @@ class Pulsar:
         df = np.diff(np.append(0., f))
         if custom_psd is not None:
             assert len(custom_psd) == len(f), '"custom_psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
-            psd = custom_psd * df
+            psd = custom_psd
         else:
             fyr = 1/sc.Julian_year
-            psd = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma) * df
-        psd = np.repeat(psd, 2)
+            psd = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma)
+
+        self.signal_model[signal] = {}
+        self.signal_model[signal]['f'] = f
+        self.signal_model[signal]['psd'] = psd
+        self.signal_model[signal]['fourier'] = None
+        self.signal_model[signal]['nbin'] = components
+
+        psd = np.repeat(psd * df, 2)
         basis = np.zeros((len(self.toas[mask]), 2*components))
         for i in range(components):
             basis[:, 2*i] = (freqf/self.freqs)**idx * np.cos(2*np.pi*f[i]*self.toas[mask])
@@ -312,6 +376,12 @@ class Pulsar:
             self.residuals[mask] += gp
         
     def add_cgw(self, costheta, phi, cosinc, log10_mc, log10_fgw, log10_h, phase0, psi, psrterm=False):
+
+        if 'cgw' in self.signal_model:
+            ncgw = len(self.signal_model['cgw'])
+            self.signal_model['cgw'][str(ncgw)] = {'costheta':costheta, 'phi':phi, 'cosinc':cosinc,
+                                                   'log10_mc':log10_mc, 'log10_fgw':log10_fgw, 'log10_h':log10_h,
+                                                   'phase0':phase0, 'psi':psi, 'psrterm':psrterm}
 
         cgw = det.cw_delay(self.toas, self.pos, self.pdist,
                             cos_gwtheta=costheta, gwphi=phi,
@@ -386,6 +456,21 @@ class Pulsar:
             inv_cov = np.linalg.inv(cov)
             resids = np.dot(red_cov.T, np.dot(inv_cov, residuals))
         return resids
+    
+    def reconstruct_signal(self, signals=None, freqf=1400):
+
+        if signals is None:
+            signals = [*self.signal_model]
+        sig = np.zeros(len(self.toas))
+        idx = {'red_noise':0, 'dm_gp':2, 'chrom_gp':4}
+        for signal in signals:
+            f = self.signal_model[signal]['f']
+            df = np.diff(np.append(0., f))
+            c = self.signal_model[signal]['fourier']
+            for c_k, f_k, df_k in zip(c.T, f, df):
+                sig += df_k * c_k[0] * (freqf/self.freqs)**idx[signal] * np.cos(2*np.pi*f_k * self.toas)
+                sig += df_k * c_k[1] * (freqf/self.freqs)**idx[signal] * np.sin(2*np.pi*f_k * self.toas)
+        return sig
 
 
 def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, freqs=[1400], isotropic=False, backends=None, noisedict=None, custom_model=None, gp_noises=False):
