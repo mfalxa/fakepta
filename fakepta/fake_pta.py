@@ -74,6 +74,7 @@ class Pulsar:
                 noisedict[self.name+'_'+backend+'_efac'] = 1.
                 noisedict[self.name+'_'+backend+'_log10_tnequad'] = -8.
                 noisedict[self.name+'_'+backend+'_log10_t2equad'] = -8.
+                noisedict[self.name+'_'+backend+'_log10_ecorr'] = -8.
             self.noisedict = noisedict
         elif np.any([self.name in key for key in [*custom_noisedict]]):
             keys = [*custom_noisedict]
@@ -91,6 +92,10 @@ class Pulsar:
                     noisedict[self.name+'_'+backend+'_log10_t2equad'] = custom_noisedict[backend+'_log10_t2equad']
                 except:
                     continue
+                try:
+                    noisedict[self.name+'_'+backend+'_log10_ecorr'] = custom_noisedict[backend+'_log10_ecorr']
+                except:
+                    continue
             self.noisedict = noisedict
         else:
             noisedict = {}
@@ -99,6 +104,10 @@ class Pulsar:
                 noisedict[self.name+'_'+backend+'_log10_tnequad'] = custom_noisedict['log10_tnequad']
                 try:
                     noisedict[self.name+'_'+backend+'_log10_t2equad'] = custom_noisedict['log10_t2equad']
+                except:
+                    continue
+                try:
+                    noisedict[self.name+'_'+backend+'_log10_ecorr'] = custom_noisedict[backend+'_log10_ecorr']
                 except:
                     continue
             self.noisedict = noisedict
@@ -135,6 +144,8 @@ class Pulsar:
         self.tm_pars['DM'] = (0., 5e-4)
         self.tm_pars['DM1'] = (0., 1e-4)
         self.tm_pars['DM2'] = (0., 1e-5)
+        self.tm_pars['ELONG'] = (0., 1e-5)
+        self.tm_pars['ELAT'] = (0., 1e-5)
         if timing_model is not None:
             self.tm_pars.update(timing_model)
 
@@ -148,8 +159,11 @@ class Pulsar:
         self.Mmat[:, 3] = 1 / self.freqs**2
         self.Mmat[:, 4] = (self.toas - t0) / self.freqs**2 / self.tm_pars['F0'][0]
         self.Mmat[:, 5] = 0.5 * (self.toas - t0)**2 / self.freqs**2 / self.tm_pars['F0'][0]
+        self.Mmat[:, 6] = self.cos(2*np.pi/sc.Julian_year * (self.toas - t0))
+        self.Mmat[:, 7] = self.sin(2*np.pi/sc.Julian_year * (self.toas - t0))
 
     def update_position(self, theta, phi, update_name=False):
+        
         self.theta = theta
         self.phi = phi
         self.pos = np.array([np.cos(phi)*np.sin(theta), np.sin(phi)*np.sin(theta), np.cos(theta)])
@@ -171,47 +185,62 @@ class Pulsar:
         for signal in [*self.signal_model]:
             self.signal_model.pop(signal)
 
-    def add_white_noise(self, randomize=False):
+    def add_white_noise(self, add_ecorr=False, randomize=False):
 
         if randomize:
             for key in [*self.noisedict]:
                 if 'efac' in key:
-                    self.noisedict[key] = np.random.uniform(-0.5, 2.5)
+                    self.noisedict[key] = np.random.uniform(0.5, 2.5)
                 if 'equad' in key:
                     self.noisedict[key] = np.random.uniform(-8., -5.)
+                if add_ecorr and 'ecorr' in key:
+                    self.noisedict[key] = np.random.uniform(-10., -7.)
         if self.backends is None:
-            toaerrs = np.sqrt(self.noisedict[self.name+'_efac']**2 * self.toaerrs**2 + 10**(2*self.noisedict[self.name+'_log10_tnequad']))
-            self.residuals += np.random.normal(scale=toaerrs)
+            toaerrs2 = self.noisedict[self.name+'_efac']**2 * self.toaerrs**2 + 10**(2*self.noisedict[self.name+'_log10_tnequad'])
         else:
             toaerrs2 = np.zeros(len(self.toaerrs))
             for backend in self.backends:
                 mask_backend = self.backend_flags == backend
                 toaerrs2[mask_backend] = self.noisedict[self.name+'_'+backend+'_efac']**2 * self.toaerrs[mask_backend]**2 + 10**(2*self.noisedict[self.name+'_'+backend+'_log10_tnequad'])
-            self.residuals += np.random.normal(scale=toaerrs2**0.5)
+        
+        if add_ecorr:
+            for backend in self.backends:
+                quant_idx = self.quantise_ecorr(backends=[backend])
+                for q_i in quant_idx:
+                    if len(q_i) < 2:
+                        self.residuals[q_i] += np.random.normal(scale=toaerrs2[q_i]**0.5)
+                    else:
+                        white_block = np.ones((len(q_i), len(q_i))) * 10**self.noisedict[self.name+'_'+backend+'_log10_ecorr']
+                        white_block = np.fill_diagonal(white_block, np.diag(white_block) + toaerrs2[q_i])
+                        self.residuals[q_i] += np.random.multivariate_normal(mean=np.zeros(len(q_i)), cov=white_block)
+            else:
+                self.residuals += np.random.normal(scale=toaerrs2**0.5)
 
-    # MERGE ADD ECORR TO ADD WHITE NOISE
-
-    def add_ecorr(self, dt=10, backends=None):
+    def quantise_ecorr(self, dt=1, backends=None):
 
         if backends is None:
             backends = self.backends
-            for backend in self.backends:
-                if self.name+'_'+backend+'_ecorr' not in [*self.noisedict]:
-                    self.noisedict[self.name+'_'+backend+'_ecorr'] = np.random.uniform(-8., -5.)
-        else:
-            for backend in backends:
-                if self.name+'_'+backend+'_ecorr' not in [*self.noisedict]:
-                    self.noisedict[self.name+'_'+backend+'_ecorr'] = np.random.uniform(-8., -5.)
 
         times = self.toas - self.toas[0]
-        nt = int(times/dt)
-        for n in range(nt):
-            mask_t = times > n*dt
-            mask_t *= times < (n+1)*dt
-            for backend in backends:
-                backend_mask = self.backend_flags == backend
-                mask = mask_t * backend_mask
-                self.residuals[mask] += 10**(2*self.noisedict[self.name+'_'+backend+'_ecorr']) * np.random.normal()
+        quantised_idx = []
+        dt *= 24 * 3600
+        for backend in backends:
+            backend_mask = self.backend_flags == backend
+            b_idx = np.arange(len(times))[backend_mask]
+            t0 = times[b_idx[0]]
+            q_i = [b_idx[0]]
+            for n in b_idx[1:]:
+                if times[n] - t0 < dt:
+                    q_i.append(n)
+                else:
+                    t0 = times[n]
+                    quantised_idx.append(np.array(q_i))
+                    q_i = [n]
+        
+        return quantised_idx
+
+        
+        # self.residuals[mask] += 10**(2*self.noisedict[self.name+'_'+backend+'_ecorr']) * np.random.normal()
 
     def add_red_noise(self, spectrum='powerlaw', f_psd=None, **kwargs):
 
@@ -358,9 +387,13 @@ class Pulsar:
 
         if 'cgw' in self.signal_model:
             ncgw = len(self.signal_model['cgw'])
-            self.signal_model['cgw'][str(ncgw)] = {'costheta':costheta, 'phi':phi, 'cosinc':cosinc,
-                                                   'log10_mc':log10_mc, 'log10_fgw':log10_fgw, 'log10_h':log10_h,
-                                                   'phase0':phase0, 'psi':psi, 'psrterm':psrterm}
+        else:
+            self.signal_model['cgw'] = {}
+            ncgw = 0
+        
+        self.signal_model['cgw'][str(ncgw)] = {'costheta':costheta, 'phi':phi, 'cosinc':cosinc,
+                                                'log10_mc':log10_mc, 'log10_fgw':log10_fgw, 'log10_h':log10_h,
+                                                'phase0':phase0, 'psi':psi, 'psrterm':psrterm}
 
         cgw = det.cw_delay(self.toas, self.pos, self.pdist,
                             cos_gwtheta=costheta, gwphi=phi,
@@ -468,6 +501,15 @@ class Pulsar:
                     sig[mask] += df_k * c_k[0] * np.cos(2*np.pi*f_k * self.toas[mask])
                     sig[mask] += df_k * c_k[1] * np.sin(2*np.pi*f_k * self.toas[mask])
         return sig
+    
+    def remove_signal(self, signals=None, freqf=1400):
+
+        # remove signal from residuals and signal model
+
+        res = self.reconstruct_signal(signals, freqf=freqf)
+        self.residuals -= res
+        for signal in signals:
+            self.signal_model.pop(signal)
 
 
 def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, freqs=[1400], isotropic=False, backends=None, noisedict=None, custom_model=None):
@@ -491,7 +533,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
     # Number of TOAs for each pulsar
     if ntoas is None:
         cadence = 7 * 24*3600 # days
-        # DRAW F0 AND CORRECT CADENCE WRT F0
+        # draw F0 and correct cadence wrt F0
         F0 = np.random.uniform(200, 300, size=npsrs)
         d_cadence = (F0 * cadence - np.floor(F0 * cadence )) / F0
         cadence = cadence - d_cadence
