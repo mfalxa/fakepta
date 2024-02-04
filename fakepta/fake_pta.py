@@ -129,13 +129,6 @@ class Pulsar:
 
     def init_tm_pars(self, timing_model):
 
-        dt = np.mean(np.diff(self.toas))
-        f_diff = lambda F0 : dt*F0 - np.floor(dt*F0)
-        F0_init = np.random.uniform(200, 300)
-        F0 = fsolve(f_diff, F0_init, xtol=1e-12)
-
-        self.tm_pars = {}
-        self.tm_pars['F0'] = (F0, 1e-12)
         self.tm_pars = {}
         self.tm_pars['F0'] = (200, 1e-13)
         self.tm_pars['F1'] = (0., 1e-20)
@@ -322,7 +315,12 @@ class Pulsar:
             self.residuals[mask] += (freqf/self.freqs)**idx * df[i]**0.5 * coeffs[2*i] * np.cos(2*np.pi*f_psd[i]*self.toas[mask])
             self.residuals[mask] += (freqf/self.freqs)**idx * df[i]**0.5 * coeffs[2*i+1] * np.sin(2*np.pi*f_psd[i]*self.toas[mask])
 
-    def add_time_correlated_noise_gp(self, signal='', log10_A=None, gamma=None, idx=4, components=None, freqf=1400, backend=None, custom_psd=None, f_psd=None, return_cov=False):
+    def make_time_correlated_noise_cov(self, signal='', freqf=1400):
+
+        if 'system_noise' in signal:
+            backend = signal.split('system_noise_')[1]
+        else:
+            backend = None
 
         if backend is not None:
             signal = backend + '_' + signal
@@ -332,48 +330,21 @@ class Pulsar:
                 return
         else:
             mask = np.ones(len(self.toas), dtype='bool')
-        if log10_A is None:
-            if self.name+'_'+str(signal)+'_log10_A' in self.noisedict:
-                log10_A = self.noisedict[self.name+'_'+str(signal)+'_log10_A']
-            else:
-                log10_A = np.random.uniform(-17., -13.)
-                self.noisedict[self.name+'_'+str(signal)+'_log10_A'] = log10_A
-        if gamma is None:
-            if self.name+'_'+str(signal)+'_gamma' in self.noisedict:
-                gamma = self.noisedict[self.name+'_'+str(signal)+'_gamma']
-            else:
-                gamma = np.random.uniform(1., 6.)
-                self.noisedict[self.name+'_'+str(signal)+'_gamma'] = gamma
-        if f_psd is None:
-            f = np.arange(1, components+1) / self.Tspan
-        else:
-            f = f_psd
-        df = np.diff(np.append(0., f))
-        if custom_psd is not None:
-            assert len(custom_psd) == len(f), '"custom_psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
-            psd = custom_psd
-        else:
-            fyr = 1/sc.Julian_year
-            psd = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma)
 
         # save noise properties in signal model
-        self.signal_model[signal] = {}
-        self.signal_model[signal]['f'] = f
-        self.signal_model[signal]['psd'] = psd
-        self.signal_model[signal]['fourier'] = None
-        self.signal_model[signal]['nbin'] = components
+        f = self.signal_model[signal]['f']
+        psd = self.signal_model[signal]['psd']
+        components = self.signal_model[signal]['nbin']
 
+        df = np.diff(np.append(0, f))
         psd = np.repeat(psd * df, 2)
         basis = np.zeros((len(self.toas[mask]), 2*components))
+        idx = {'red_noise':0, 'dm_gp':2, 'chrom_gp':4}
         for i in range(components):
-            basis[:, 2*i] = (freqf/self.freqs)**idx * np.cos(2*np.pi*f[i]*self.toas[mask])
-            basis[:, 2*i+1] = (freqf/self.freqs)**idx * np.sin(2*np.pi*f[i]*self.toas[mask])
+            basis[:, 2*i] = (freqf/self.freqs)**idx[signal] * np.cos(2*np.pi*f[i]*self.toas[mask])
+            basis[:, 2*i+1] = (freqf/self.freqs)**idx[signal] * np.sin(2*np.pi*f[i]*self.toas[mask])
         cov = np.dot(basis, np.dot(np.diag(psd), basis.T))
-        if return_cov:
-            return cov
-        else:
-            gp = np.random.multivariate_normal(mean=np.zeros(len(self.toas[mask])), cov=cov)
-            self.residuals[mask] += gp
+        return cov
         
     def add_cgw(self, costheta, phi, cosinc, log10_mc, log10_fgw, log10_h, phase0, psi, psrterm=False):
 
@@ -439,11 +410,11 @@ class Pulsar:
 
         red_cov = np.zeros((len(self.toas), len(self.toas)))
         if self.custom_model['RN'] is not None:
-            red_cov += self.add_time_correlated_noise_gp(signal='red_noise', idx=0, components=self.custom_model['RN'], freqf=1400, return_cov=True)
+            red_cov += self.make_time_correlated_noise_cov(signal='red_noise')
         if self.custom_model['DM'] is not None:
-            red_cov += self.add_time_correlated_noise_gp(signal='dm_gp', idx=2, components=self.custom_model['DM'], freqf=1400, return_cov=True)
+            red_cov += self.make_time_correlated_noise_cov(signal='dm_gp')
         if self.custom_model['Sv'] is not None:
-            red_cov += self.add_time_correlated_noise_gp(signal='chrom_gp', idx=4, components=self.custom_model['Sv'], freqf=1400, return_cov=True)
+            red_cov += self.make_time_correlated_noise_cov(signal='chrom_gp')
         return white_cov, red_cov
     
     def draw_noise_model(self, residuals=None):
@@ -507,8 +478,12 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
 
     # Number of TOAs for each pulsar
     if ntoas is None:
-        cadence = 14 # days
-        ntoas = np.int32(Tobs * 365.25 / cadence)
+        cadence = 7 * 24*3600 # days
+        # DRAW F0 AND CORRECT CADENCE WRT F0
+        F0 = np.random.uniform(200, 300, size=npsrs)
+        d_cadence = (F0 * cadence - np.floor(F0 * cadence )) / F0
+        cadence = cadence - d_cadence
+        ntoas = np.int32(Tobs * 365.25 * 24 * 3600 / cadence)
     elif isinstance(ntoas, float) or isinstance(ntoas, int):
         ntoas = np.int32(ntoas * np.ones(npsrs))
 
@@ -520,10 +495,10 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
     if gaps:
         gap_odds = [True, True, True, False] # one out of five
         keep = [np.random.choice(gap_odds, size=ntoa) for ntoa in ntoas]
-        toas = [np.linspace((Tmax - Tobs[i])*yr, Tmax*yr, ntoas[i]) for i in range(npsrs)]
+        toas = [(Tmax - Tobs[i])*yr + np.arange(1, ntoas[i]+1)*cadence[i] for i in range(npsrs)]
         toas = [toas[i][keep[i]] for i in range(npsrs)]
     else:
-        toas = [np.linspace((Tmax - Tobs[i])*yr, Tmax*yr, ntoas[i]) for i in range(npsrs)]
+        toas = [(Tmax - Tobs[i])*yr + np.arange(1, ntoas[i]+1)*cadence[i] for i in range(npsrs)]
     if toaerr is None:
         toaerr = np.power(10, np.random.uniform(-7., -5., size=npsrs))
     elif isinstance(toaerr, float):
@@ -559,7 +534,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
     for i in range(npsrs):
         if custom_model is None:
             custom_model = None
-        psr = Pulsar(toas[i], toaerr[i], np.arccos(costhetas[i]), phis[i], pdist[i], freqs=freqs, backends=backends[i], custom_noisedict=noisedict, custom_model=custom_model)
+        psr = Pulsar(toas[i], toaerr[i], np.arccos(costhetas[i]), phis[i], pdist[i], freqs=freqs, backends=backends[i], custom_noisedict=noisedict, custom_model=custom_model, tm_params={'F0':(F0[i], np.random.uniform(1e-13, 1e-12))})
         print('Creating psr', psr.name)
         psr.add_white_noise()
         psr.add_red_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5))
