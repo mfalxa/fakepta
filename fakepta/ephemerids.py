@@ -5,7 +5,8 @@ class Ephemerids:
 
     def __init__(self):
 
-        self.planets = {}
+        # Generate approximated solar system ephemerids to control Roemer delay injection
+
         # mass = planet mass [kg]
         # T = orbital period [days]
         # inc : inclination of orbit [deg]
@@ -13,6 +14,7 @@ class Ephemerids:
         # omega : argument of periapsis [deg]
         # a : semi major axis [AU]
         # l0 : mean longitude at epoch [deg]
+        self.planets = {}
         self.planets['mercury'] = {'mass':3.301*1e23, 'T':87.9691 , 'inc':7.00487, 'Om':48.33167, 'omega':77.45645, 'a':0.38709893, 'e':0.20563069, 'l0':252.25}
         self.planets['venus'] = {'mass':4.867*1e24, 'T':224.7, 'inc':3.39471, 'Om':76.68069, 'omega':131.53298, 'a':0.72333199, 'e':0.00677323, 'l0':181.98}
         self.planets['earth'] = {'mass':5.972*1e24, 'T':365.25636, 'inc':0.00005, 'Om':-11.26064, 'omega':102.94719, 'a':1.00000011, 'e':0.01671022, 'l0':100.47}
@@ -27,7 +29,9 @@ class Ephemerids:
         
     def do_rotation_pf_to_eq(self, vec, Om, omega, inc):
 
-        inc += 23.4
+        # rotation from perifocal plane to equatorial plane
+
+        inc += 23.4  # Earth ecliptic inclination wrt equatorial plane
         inc *= np.pi/180
         Om *= np.pi/180
         omega *= np.pi/180
@@ -38,6 +42,8 @@ class Ephemerids:
         return np.dot(rot, vec)
 
     def compute_orbit(self, times, T, Om, omega, inc, a, e, l0, mass=None):
+
+        # compute approximated orbit trajectory for given orbital elements
 
         if a is None:
             a = (const.GMsun * (T*const.day)**2 / (4*np.pi**2))**(1/3) / const.c
@@ -68,12 +74,16 @@ class Ephemerids:
     
     def get_planet_ssb(self, times):
 
+        # compute position of planets wrt solar system barycenter
+
         planetssb = np.empty((len(times), len(self.planet_names), 6))
         for i, planet in enumerate(['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune']):
             planetssb[:, i, :3] = self.get_orbit_planet(times, planet)
         return planetssb
 
     def get_sunssb(self, times):
+
+        # compute position of sun wrt solar system barycenter
 
         sunssb = np.zeros((len(times), 3))
         for planet in [*self.planets]:
@@ -83,11 +93,15 @@ class Ephemerids:
     
     def add_planet(self, name, mass, T, inc, Om, omega, a, e, l0):
 
+        # add new planet
+
         self.planets[name] = {'mass':mass, 'T':T , 'inc':inc, 'Om':Om, 'omega':omega, 'a':a, 'e':e, 'l0':l0}
         self.mass_ss = const.Msun + np.sum([self.planets[planet]['mass'] for planet in [*self.planets]])
         self.planet_names = [*self.planets]
 
     def roemer_delay(self, toas, psr_pos, planet, d_mass=0., d_Om=0., d_omega=0., d_inc=0., d_a=0., d_e=0., d_l0=0.):
+
+        # generate roemer delay due to errors in solar system ephemerids of planet
 
         mass = self.planets[planet]['mass']
         T = self.planets[planet]['T']

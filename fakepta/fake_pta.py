@@ -165,6 +165,8 @@ class Pulsar:
 
     def make_ideal(self):
 
+        # set residuals to zero and clean signal model dict
+
         self.residuals = np.zeros(len(self.toas))
         for signal in [*self.signal_model]:
             self.signal_model.pop(signal)
@@ -288,6 +290,8 @@ class Pulsar:
 
     def add_time_correlated_noise(self, signal='', spectrum='powerlaw', psd=None, f_psd=None, idx=0, freqf=1400, backend=None):
 
+        # generate time correlated noise with given PSD and chromatic index
+
         if backend is not None:
             signal = backend + '_' + signal
             mask = self.backend_flags == backend
@@ -316,6 +320,8 @@ class Pulsar:
             self.residuals[mask] += (freqf/self.freqs)**idx * df[i]**0.5 * coeffs[2*i+1] * np.sin(2*np.pi*f_psd[i]*self.toas[mask])
 
     def make_time_correlated_noise_cov(self, signal='', freqf=1400):
+
+        # returns covariance matrix of time correlated noise with given PSD and chromatic index
 
         if 'system_noise' in signal:
             backend = signal.split('system_noise_')[1]
@@ -347,6 +353,8 @@ class Pulsar:
         return cov
         
     def add_cgw(self, costheta, phi, cosinc, log10_mc, log10_fgw, log10_h, phase0, psi, psrterm=False):
+
+        # add continuous gravitational wave from circular black hole binary
 
         if 'cgw' in self.signal_model:
             ncgw = len(self.signal_model['cgw'])
@@ -399,6 +407,8 @@ class Pulsar:
     
     def make_noise_covariance_matrix(self):
 
+        # make total noise covariance matrix
+
         if self.backends is None:
             toaerrs = np.sqrt(self.noisedict[self.name+'_efac']**2 * self.toaerrs**2 + 10**(2*self.noisedict[self.name+'_log10_tnequad']))
         else:
@@ -429,6 +439,8 @@ class Pulsar:
         return resids
     
     def reconstruct_signal(self, signals=None, freqf=1400):
+
+        # reconstruct time domain realisation of injected noises and signals
 
         if signals is None:
             signals = [*self.signal_model]
