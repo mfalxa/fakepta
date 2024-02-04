@@ -4,15 +4,19 @@ import pickle, json
 from scipy.optimize import fsolve
 from enterprise_extensions import deterministic as det
 import scipy.constants as sc
+import importlib, inspect
 try:
     import healpy as hp
 except:
     print('healpy module not found.')
 
+# load spectrum functions from "spectrum.py"
+module = importlib.import_module('spectrum')
+spec = dict(inspect.getmembers(module, inspect.isfunction))
 
 class Pulsar:
 
-    def __init__(self, toas, toaerr, theta, phi, pdist=(1., 0.2), freqs=[1400], custom_noisedict=None, custom_model=None, tm_params=None, backends=['backend']):
+    def __init__(self, toas, toaerr, theta, phi, pdist=(1., 0.2), freqs=[1400], custom_noisedict=None, custom_model=None, tm_params=None, backends=['backend'], ephem=None):
 
         self.nepochs = len(toas)
         self.toas = np.repeat(toas, len(backends))
@@ -31,12 +35,16 @@ class Pulsar:
         # self.backend_flags = np.array([bf+'.'+str(int(f)) for bf, f in zip(self.backend_flags, self.freqs)])
         self.freqs, self.backend_flags = self.get_freqs_and_backends(freqs, backends)
         self.backends = np.unique(self.backend_flags)
-        self.planetssb = None
-        self.pos_t = None
-        self.freqs = abs(self.freqs + np.random.normal(scale=100, size=len(self.freqs)))
+        self.freqs = abs(self.freqs + np.random.normal(scale=10, size=len(self.freqs)))
         self.theta = theta
         self.phi = phi
         self.pos = np.array([np.cos(phi)*np.sin(theta), np.sin(phi)*np.sin(theta), np.cos(theta)])
+        if ephem is not None:
+            self.planetssb = ephem.get_planet_ssb(self.toas)
+            self.pos_t = np.tile(self.pos, (len(self.toas), 1))
+        else:
+            self.planetssb = None
+            self.pos_t = None
         self.pdist = pdist
         self.name = self.get_psrname()
         self.init_tm_pars(tm_params)
@@ -155,9 +163,18 @@ class Pulsar:
         if update_name:
             self.name = self.get_psrname()
 
+    def update_noisedict(self, prefix, dict_vals):
+
+        params = {}
+        for key in [*dict_vals]:
+            params[prefix+'_'+key] = dict_vals[key]
+        self.noisedict.update(params)
+
     def make_ideal(self):
 
         self.residuals = np.zeros(len(self.toas))
+        for signal in [*self.signal_model]:
+            self.signal_model.pop(signal)
 
     def add_white_noise(self, randomize=False):
 
@@ -176,6 +193,8 @@ class Pulsar:
                 mask_backend = self.backend_flags == backend
                 toaerrs2[mask_backend] = self.noisedict[self.name+'_'+backend+'_efac']**2 * self.toaerrs[mask_backend]**2 + 10**(2*self.noisedict[self.name+'_'+backend+'_log10_tnequad'])
             self.residuals += np.random.normal(scale=toaerrs2**0.5)
+
+    # MERGE ADD ECORR TO ADD WHITE NOISE
 
     def add_ecorr(self, dt=10, backends=None):
 
@@ -199,83 +218,82 @@ class Pulsar:
                 mask = mask_t * backend_mask
                 self.residuals[mask] += 10**(2*self.noisedict[self.name+'_'+backend+'_ecorr']) * np.random.normal()
 
-    def add_red_noise(self, gp=False, log10_A=None, gamma=None, custom_psd=None, f_psd=None):
+    def add_red_noise(self, spectrum='powerlaw', f_psd=None, **kwargs):
 
         rn_components = self.custom_model['RN']
         if rn_components is not None:
 
-            if custom_psd is not None:
-                psd = custom_psd
-            else:
-                if 'red_noise' in self.signal_model:
-                    psd = self.signal_model['red_noise']['psd']
-                    f_psd = self.signal_model['red_noise']['f']
-                else:
-                    psd = None
+            if f_psd is None:
+                f_psd = np.arange(1, rn_components+1) / self.Tspan
 
-            if gp:
-                self.add_time_correlated_noise_gp(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, custom_psd=psd, f_psd=f_psd)
-            else:
-                self.add_time_correlated_noise(signal='red_noise', log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, custom_psd=psd, f_psd=f_psd)
+            if 'red_noise' in self.signal_model:
+                self.residuals -= self.reconstruct_signal(['red_noise'])
 
-    def add_dm_noise(self, gp=False, log10_A=None, gamma=None, custom_psd=None, f_psd=None):
+            if spectrum is 'custom':
+                psd = kwargs['custom_psd']
+            elif spectrum in [*spec]:
+                psd = spec[spectrum](f_psd, **kwargs)
+                self.update_noisedict(self.name+'_red_noise', kwargs)
+
+                self.add_time_correlated_noise(signal='red_noise', spectrum=spectrum, idx=0., psd=psd, f_psd=f_psd)
+
+    def add_dm_noise(self, spectrum='powerlaw', f_psd=None, **kwargs):
 
         dm_components = self.custom_model['DM']
         if dm_components is not None:
             
-            if custom_psd is not None:
-                psd = custom_psd
-            else:
-                if 'dm_gp' in self.signal_model:
-                    psd = self.signal_model['dm_gp']['psd']
-                    f_psd = self.signal_model['dm_gp']['f']
-                else:
-                    psd = None
+            if f_psd is None:
+                f_psd = np.arange(1, dm_components+1) / self.Tspan
 
-            if gp:
-                self.add_time_correlated_noise_gp(signal='dm_gp', log10_A=log10_A, gamma=gamma, idx=2, components=dm_components, custom_psd=psd, f_psd=f_psd)
-            else:
-                self.add_time_correlated_noise(signal='dm_gp', log10_A=log10_A, gamma=gamma, idx=2, components=dm_components, custom_psd=psd, f_psd=f_psd)
+            if 'dm_gp' in self.signal_model:
+                self.residuals -= self.reconstruct_signal(['dm_gp'])
 
-    def add_chromatic_noise(self, gp=False, log10_A=None, gamma=None, custom_psd=None, f_psd=None):
+            if spectrum is 'custom':
+                psd = kwargs['custom_psd']
+            elif spectrum in [*spec]:
+                psd = spec[spectrum](f_psd, **kwargs)
+                self.update_noisedict(self.name+'_dm_gp', kwargs)
+
+            self.add_time_correlated_noise(signal='dm_gp', spectrum=spectrum, idx=2., psd=psd, f_psd=f_psd)
+
+    def add_chromatic_noise(self, spectrum='powerlaw', f_psd=None, **kwargs):
 
         sv_components = self.custom_model['Sv']
         if sv_components is not None:
             
-            if custom_psd is not None:
-                psd = custom_psd
-            else:
-                if 'chrom_gp' in self.signal_model:
-                    psd = self.signal_model['chrom_gp']['psd']
-                    f_psd = self.signal_model['chrom_gp']['f']
-                else:
-                    psd = None
+            if f_psd is None:
+                f_psd = np.arange(1, sv_components+1) / self.Tspan
 
-            if gp:
-                self.add_time_correlated_noise_gp(signal='chrom_gp', log10_A=log10_A, gamma=gamma, idx=4, components=sv_components, custom_psd=psd, f_psd=f_psd)
-            else:
-                self.add_time_correlated_noise(signal='chrom_gp', log10_A=log10_A, gamma=gamma, idx=4, components=sv_components, custom_psd=psd, f_psd=f_psd)
+            if 'chrom_gp' in self.signal_model:
+                self.residuals -= self.reconstruct_signal(['chrom_gp'])
 
-    def add_system_noise(self, backend=None, gp=True, components=30, log10_A=None, gamma=None, custom_psd=None, f_psd=None):
+            if spectrum is 'custom':
+                psd = kwargs['custom_psd']
+            elif spectrum in [*spec]:
+                psd = spec[spectrum](f_psd, **kwargs)
+                self.update_noisedict(self.name+'_chrom_gp', kwargs)
 
-        rn_components = components
-        if rn_components is not None:
-            
-            if custom_psd is not None:
-                psd = custom_psd
-            else:
-                if 'system_noise_'+str(backend) in self.signal_model:
-                    psd = self.signal_model['system_noise_'+str(backend)]['psd']
-                    f_psd = self.signal_model['system_noise_'+str(backend)]['f']
-                else:
-                    psd = None
+            self.add_time_correlated_noise(signal='chrom_gp', spectrum=spectrum, idx=4, psd=psd, f_psd=f_psd)
 
-            if gp:
-                self.add_time_correlated_noise_gp(signal='system_noise_'+str(backend), log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, backend=backend, custom_psd=psd, f_psd=f_psd)
-            else:
-                self.add_time_correlated_noise(signal='system_noise_'+str(backend), log10_A=log10_A, gamma=gamma, idx=0., components=rn_components, backend=backend, custom_psd=psd, f_psd=f_psd)
+    def add_system_noise(self, backend=None, components=30, spectrum='powerlaw', f_psd=None, **kwargs):
 
-    def add_time_correlated_noise(self, signal='', log10_A=None, gamma=None, idx=4, components=None, freqf=1400, backend=None, custom_psd=None, f_psd=None):
+        assert backend is not None, '"backend" name where system noise is injected must be given'
+
+        if f_psd is None:
+            f_psd = np.arange(1, components+1) / self.Tspan
+
+        if 'system_noise_'+str(backend) in self.signal_model:
+            self.residuals -= self.reconstruct_signal(['system_noise_'+str(backend)])
+
+        if spectrum is 'custom':
+            psd = kwargs['custom_psd']
+        elif spectrum in [*spec]:
+            psd = spec[spectrum](f_psd, kwargs)
+            self.update_noisedict(self.name+'_system_noise_'+str(backend), kwargs)
+
+        self.add_time_correlated_noise(signal='system_noise_'+str(backend), idx=0., backend=backend, psd=psd, f_psd=f_psd)
+
+    def add_time_correlated_noise(self, signal='', spectrum='powerlaw', psd=None, f_psd=None, idx=0, freqf=1400, backend=None):
 
         if backend is not None:
             signal = backend + '_' + signal
@@ -285,43 +303,24 @@ class Pulsar:
                 return
         else:
             mask = np.ones(len(self.toas), dtype='bool')
-        if log10_A is None:
-            if self.name+'_'+str(signal)+'_log10_A' in self.noisedict:
-                log10_A = self.noisedict[self.name+'_'+str(signal)+'_log10_A']
-            else:
-                log10_A = np.random.uniform(-17., -13.)
-                self.noisedict[self.name+'_'+str(signal)+'_log10_A'] = log10_A
-        if gamma is None:
-            if self.name+'_'+str(signal)+'_gamma' in self.noisedict:
-                gamma = self.noisedict[self.name+'_'+str(signal)+'_gamma']
-            else:
-                gamma = np.random.uniform(1., 6.)
-                self.noisedict[self.name+'_'+str(signal)+'_gamma'] = gamma
-        if f_psd is None:
-            f = np.arange(1, components+1) / self.Tspan
-        else:
-            f = f_psd
-        df = np.diff(np.append(0., f))
-        if custom_psd is not None:
-            # assert f_psd is None, '"f_psd" must not be None. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
-            assert len(custom_psd) == len(f), '"custom_psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
-            psd = custom_psd
-        else:
-            fyr = 1/sc.Julian_year
-            psd = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma)
-        
+
+        df = np.diff(np.append(0., f_psd))
+        assert len(psd) == len(f_psd), '"psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to the frequencies where the "psd" is evaluated.'
         psd = np.repeat(psd, 2)
+
         coeffs = np.random.normal(loc=0., scale=np.sqrt(psd))
 
+        # save noise properties in signal model
         self.signal_model[signal] = {}
-        self.signal_model[signal]['f'] = f
-        self.signal_model[signal]['psd'] = psd
+        self.signal_model[signal]['spectrum'] = spectrum
+        self.signal_model[signal]['f'] = f_psd
+        self.signal_model[signal]['psd'] = psd[::2]
         self.signal_model[signal]['fourier'] = np.vstack((coeffs[::2] / df**0.5, coeffs[1::2] / df**0.5))
-        self.signal_model[signal]['nbin'] = components
+        self.signal_model[signal]['nbin'] = len(f_psd)
         
-        for i in range(components):
-            self.residuals[mask] += (freqf/self.freqs)**idx * df[i]**0.5 * coeffs[2*i] * np.cos(2*np.pi*f[i]*self.toas[mask])
-            self.residuals[mask] += (freqf/self.freqs)**idx * df[i]**0.5 * coeffs[2*i+1] * np.sin(2*np.pi*f[i]*self.toas[mask])
+        for i in range(len(f_psd)):
+            self.residuals[mask] += (freqf/self.freqs)**idx * df[i]**0.5 * coeffs[2*i] * np.cos(2*np.pi*f_psd[i]*self.toas[mask])
+            self.residuals[mask] += (freqf/self.freqs)**idx * df[i]**0.5 * coeffs[2*i+1] * np.sin(2*np.pi*f_psd[i]*self.toas[mask])
 
     def add_time_correlated_noise_gp(self, signal='', log10_A=None, gamma=None, idx=4, components=None, freqf=1400, backend=None, custom_psd=None, f_psd=None, return_cov=False):
 
@@ -357,6 +356,7 @@ class Pulsar:
             fyr = 1/sc.Julian_year
             psd = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma)
 
+        # save noise properties in signal model
         self.signal_model[signal] = {}
         self.signal_model[signal]['f'] = f
         self.signal_model[signal]['psd'] = psd
@@ -468,17 +468,26 @@ class Pulsar:
                 for ncgw in len(self.signal_model['cgw']):
                     sig += det.cw_delay(self.toas, self.pos, self.pdist,
                                         **self.signal_model['cgw'][str(ncgw)])
-            if signal in ['red_noise', 'dm_gp', 'chrom_gp']:
+            if signal in ['red_noise', 'dm_gp', 'chrom_gp', 'common']:
                 f = self.signal_model[signal]['f']
                 df = np.diff(np.append(0., f))
                 c = self.signal_model[signal]['fourier']
                 for c_k, f_k, df_k in zip(c.T, f, df):
                     sig += df_k * c_k[0] * (freqf/self.freqs)**idx[signal] * np.cos(2*np.pi*f_k * self.toas)
                     sig += df_k * c_k[1] * (freqf/self.freqs)**idx[signal] * np.sin(2*np.pi*f_k * self.toas)
+            if 'system_noise' in signal:
+                backend = signal.split('system_noise_')[1]
+                mask = self.backend_flags == backend
+                f = self.signal_model[signal]['f']
+                df = np.diff(np.append(0., f))
+                c = self.signal_model[signal]['fourier']
+                for c_k, f_k, df_k in zip(c.T, f, df):
+                    sig[mask] += df_k * c_k[0] * np.cos(2*np.pi*f_k * self.toas[mask])
+                    sig[mask] += df_k * c_k[1] * np.sin(2*np.pi*f_k * self.toas[mask])
         return sig
 
 
-def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, freqs=[1400], isotropic=False, backends=None, noisedict=None, custom_model=None, gp_noises=False):
+def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, freqs=[1400], isotropic=False, backends=None, noisedict=None, custom_model=None):
 
     if isotropic:
         # Fibonacci sequence on sphere
@@ -553,9 +562,9 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
         psr = Pulsar(toas[i], toaerr[i], np.arccos(costhetas[i]), phis[i], pdist[i], freqs=freqs, backends=backends[i], custom_noisedict=noisedict, custom_model=custom_model)
         print('Creating psr', psr.name)
         psr.add_white_noise()
-        psr.add_red_noise(gp=gp_noises)
-        psr.add_dm_noise(gp=gp_noises)
-        psr.add_chromatic_noise(gp=gp_noises)
+        psr.add_red_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5))
+        psr.add_dm_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5))
+        psr.add_chromatic_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5))
         psrs.append(psr)
 
     return psrs
