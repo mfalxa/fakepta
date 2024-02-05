@@ -11,7 +11,7 @@ except:
     print('healpy module not found.')
 
 # load spectrum functions from "spectrum.py"
-module = importlib.import_module('spectrum')
+module = importlib.import_module('fakepta.spectrum')
 spec = dict(inspect.getmembers(module, inspect.isfunction))
 
 class Pulsar:
@@ -40,6 +40,7 @@ class Pulsar:
         self.phi = phi
         self.pos = np.array([np.cos(phi)*np.sin(theta), np.sin(phi)*np.sin(theta), np.cos(theta)])
         if ephem is not None:
+            self.ephem = ephem
             self.planetssb = ephem.get_planet_ssb(self.toas)
             self.pos_t = np.tile(self.pos, (len(self.toas), 1))
         else:
@@ -159,8 +160,8 @@ class Pulsar:
         self.Mmat[:, 3] = 1 / self.freqs**2
         self.Mmat[:, 4] = (self.toas - t0) / self.freqs**2 / self.tm_pars['F0'][0]
         self.Mmat[:, 5] = 0.5 * (self.toas - t0)**2 / self.freqs**2 / self.tm_pars['F0'][0]
-        self.Mmat[:, 6] = self.cos(2*np.pi/sc.Julian_year * (self.toas - t0))
-        self.Mmat[:, 7] = self.sin(2*np.pi/sc.Julian_year * (self.toas - t0))
+        self.Mmat[:, 6] = np.cos(2*np.pi/sc.Julian_year * (self.toas - t0))
+        self.Mmat[:, 7] = np.sin(2*np.pi/sc.Julian_year * (self.toas - t0))
 
     def update_position(self, theta, phi, update_name=False):
         
@@ -184,6 +185,9 @@ class Pulsar:
         self.residuals = np.zeros(len(self.toas))
         for signal in [*self.signal_model]:
             self.signal_model.pop(signal)
+            for key in [*self.noisedict]:
+                if signal in key:
+                    self.noisedict.pop(key)
 
     def add_white_noise(self, add_ecorr=False, randomize=False):
 
@@ -213,8 +217,8 @@ class Pulsar:
                         white_block = np.ones((len(q_i), len(q_i))) * 10**self.noisedict[self.name+'_'+backend+'_log10_ecorr']
                         white_block = np.fill_diagonal(white_block, np.diag(white_block) + toaerrs2[q_i])
                         self.residuals[q_i] += np.random.multivariate_normal(mean=np.zeros(len(q_i)), cov=white_block)
-            else:
-                self.residuals += np.random.normal(scale=toaerrs2**0.5)
+        else:
+            self.residuals += np.random.normal(scale=toaerrs2**0.5)
 
     def quantise_ecorr(self, dt=1, backends=None):
 
@@ -504,15 +508,18 @@ class Pulsar:
     
     def remove_signal(self, signals=None, freqf=1400):
 
-        # remove signal from residuals and signal model
+        # remove signal from residuals, signal model and noisedict
 
         res = self.reconstruct_signal(signals, freqf=freqf)
         self.residuals -= res
         for signal in signals:
             self.signal_model.pop(signal)
+            for key in [*self.noisedict]:
+                if signal in key:
+                    self.noisedict.pop(key)
 
 
-def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, freqs=[1400], isotropic=False, backends=None, noisedict=None, custom_model=None):
+def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, freqs=[1400], isotropic=False, backends=None, noisedict=None, custom_model=None, ephem=None):
 
     if isotropic:
         # Fibonacci sequence on sphere
@@ -531,6 +538,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
         Tobs = Tobs * np.ones(npsrs)
 
     # Number of TOAs for each pulsar
+    yr = 365.25*24*3600
     if ntoas is None:
         cadence = 7 * 24*3600 # days
         # draw F0 and correct cadence wrt F0
@@ -539,10 +547,11 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
         cadence = cadence - d_cadence
         ntoas = np.int32(Tobs * 365.25 * 24 * 3600 / cadence)
     elif isinstance(ntoas, float) or isinstance(ntoas, int):
+        F0 = 200 * np.ones(npsrs)
         ntoas = np.int32(ntoas * np.ones(npsrs))
+        cadence = Tobs * yr / ntoas
 
     # Init TOAs from latest observation time
-    yr = 365.25*24*3600
     Tmax = np.amax(Tobs)
 
     # Make unevenly sampled TOAs if gaps is True
@@ -588,7 +597,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
     for i in range(npsrs):
         if custom_model is None:
             custom_model = None
-        psr = Pulsar(toas[i], toaerr[i], np.arccos(costhetas[i]), phis[i], pdist[i], freqs=freqs, backends=backends[i], custom_noisedict=noisedict, custom_model=custom_model, tm_params={'F0':(F0[i], np.random.uniform(1e-13, 1e-12))})
+        psr = Pulsar(toas[i], toaerr[i], np.arccos(costhetas[i]), phis[i], pdist[i], freqs=freqs, backends=backends[i], custom_noisedict=noisedict, custom_model=custom_model, tm_params={'F0':(F0[i], np.random.uniform(1e-13, 1e-12))}, ephem=ephem)
         print('Creating psr', psr.name)
         psr.add_white_noise()
         psr.add_red_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5))

@@ -3,6 +3,12 @@ import numpy as np
 import scipy.constants as sc
 from scipy.interpolate import interp1d
 import healpy as hp
+import importlib, inspect
+
+
+# load spectrum functions from "spectrum.py"
+module = importlib.import_module('fakepta.spectrum')
+spec = dict(inspect.getmembers(module, inspect.isfunction))
 
 # Misc functions
 def get_correlation(psr_a, psr_b, res_a, res_b):
@@ -101,28 +107,21 @@ def curn(psrs):
     npsr = len(psrs)
     return np.eye(npsr)
 
-# PSD
-def powerlaw(f, log10_A, gamma):
-
-    fyr = 1/sc.Julian_year
-    psd_rn = (10**log10_A)** 2 / (12.0 * np.pi**2) * fyr**(gamma-3) * f**(-gamma)
-    return psd_rn
-
-# Noise generating function
-def add_correlated_red_noise_gp(psrs, orf='hd', log10_A=-15., gamma=13/3, rn_components=30, custom_psd=None, f_psd=None, h_map=None):
+# Noise generating function from covariance matrix
+def add_common_correlated_noise_gp(psrs, orf='hd', spectrum='powerlaw', rn_components=30, f_psd=None, h_map=None, **kwargs):
 
     Tspan = np.amax([psr.toas.max() for psr in psrs]) - np.amin([psr.toas.min() for psr in psrs])
     if f_psd is None:
         f = np.arange(1, rn_components+1) / Tspan
-    else:
-        f = f_psd
     df = np.diff(np.append(0., f))
-    if custom_psd is not None:
+    if spectrum is 'custom':
         # assert f_psd is None, '"f_psd" must not be None. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
+        custom_psd = kwargs['custom_psd']
         assert len(custom_psd) == len(f), '"custom_psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
         psd_gwb = custom_psd * df
-    else:
-        psd_gwb = powerlaw(f, log10_A, gamma) * df
+    elif spectrum is 'powerlaw':
+        psd_gwb = spec.powerlaw(f_psd, log10_A=kwargs['log10_A'], gamma=kwargs['gamma']) * df
+        psr.update_noisedict('common_'+orf, kwargs)
     psd_gwb = np.repeat(psd_gwb, 2)
     ntoas = 100
     cov = np.zeros((len(psrs)*ntoas, len(psrs)*ntoas))
@@ -148,3 +147,47 @@ def add_correlated_red_noise_gp(psrs, orf='hd', log10_A=-15., gamma=13/3, rn_com
         toas = np.linspace(psrs[k].toas.min(), psrs[k].toas.max(), ntoas)
         f = interp1d(toas, gwb_gp[k*ntoas:(k+1)*ntoas], kind='cubic')
         psrs[k].residuals += f(psrs[k].toas)
+
+# Noise generating function
+def add_common_correlated_noise(psrs, orf='hd', spectrum='powerlaw', idx=0, components=30, freqf=1400, custom_psd=None, f_psd=None, h_map=None, **kwargs):
+
+    Tspan = np.amax([psr.toas.max() for psr in psrs]) - np.amin([psr.toas.min() for psr in psrs])
+    if f_psd is None:
+        f_psd = np.arange(1, components+1) / Tspan
+    df = np.diff(np.append(0., f_psd))
+    if spectrum is 'custom':
+        # assert f_psd is None, '"f_psd" must not be None. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
+        custom_psd = kwargs['custom_psd']
+        assert len(custom_psd) == len(f_psd), '"custom_psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
+        psd_gwb = custom_psd
+    elif spectrum in [*spec]:
+        psd_gwb = spec[spectrum](f_psd, **kwargs)
+        for psr in psrs:
+            psr.update_noisedict('common_'+orf, kwargs)
+
+    # save noise properties in signal model
+    for psr in psrs:
+        psr.signal_model['common'] = {}
+        psr.signal_model['common']['orf'] = orf
+        psr.signal_model['common']['spectrum'] = spectrum
+        psr.signal_model['common']['hmap'] = h_map
+        psr.signal_model['common']['f'] = f_psd
+        psr.signal_model['common']['psd'] = psd_gwb
+        psr.signal_model['common']['fourier'] = np.vstack((np.zeros(components), np.zeros(components)))
+        psr.signal_model['common']['nbin'] = components
+    
+    psd_gwb = np.repeat(psd_gwb, 2)
+    coeffs = np.sqrt(psd_gwb)
+    orf_funcs = {'hd':hd, 'monopole':monopole, 'dipole':dipole, 'curn':curn}
+    if orf in [*orf_funcs]:
+        orfs = orf_funcs[orf](psrs)
+    elif orf == 'anisotropic':
+        orfs = anisotropic(psrs, h_map)
+    for i in range(components):
+        orf_corr_sin = np.random.multivariate_normal(mean=np.zeros(len(psrs)), cov=orfs)
+        orf_corr_cos = np.random.multivariate_normal(mean=np.zeros(len(psrs)), cov=orfs)
+        for n, psr in enumerate(psrs):
+            psr.signal_model['common']['fourier'][0, i] = orf_corr_cos[n] * coeffs[2*i] / df[i]**0.5
+            psr.signal_model['common']['fourier'][1, i] = orf_corr_sin[n] * coeffs[2*i+1] / df[i]**0.5
+            psr.residuals += orf_corr_cos[n] * (freqf/psr.freqs)**idx * df[i]**0.5 * coeffs[2*i] * np.cos(2*np.pi*f_psd[i]*psr.toas)
+            psr.residuals += orf_corr_sin[n] * (freqf/psr.freqs)**idx * df[i]**0.5 * coeffs[2*i+1] * np.sin(2*np.pi*f_psd[i]*psr.toas)
