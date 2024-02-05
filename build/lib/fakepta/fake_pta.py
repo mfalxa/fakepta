@@ -12,7 +12,15 @@ except:
 
 # load spectrum functions from "spectrum.py"
 module = importlib.import_module('fakepta.spectrum')
-spec = dict(inspect.getmembers(module, inspect.isfunction))
+spec = inspect.getmembers(module, inspect.isfunction)
+spec_params = {}
+for s_name, s_obj in spec:
+    print(s_name, s_obj)
+    pnames = [*inspect.signature(s_obj).parameters]
+    pnames.remove('f')
+    print(pnames)
+    spec_params[s_name] = pnames
+spec = dict(spec)
 
 class Pulsar:
 
@@ -40,6 +48,7 @@ class Pulsar:
         self.phi = phi
         self.pos = np.array([np.cos(phi)*np.sin(theta), np.sin(phi)*np.sin(theta), np.cos(theta)])
         if ephem is not None:
+            self.ephem = ephem
             self.planetssb = ephem.get_planet_ssb(self.toas)
             self.pos_t = np.tile(self.pos, (len(self.toas), 1))
         else:
@@ -259,6 +268,12 @@ class Pulsar:
             if spectrum is 'custom':
                 psd = kwargs['custom_psd']
             elif spectrum in [*spec]:
+                if len(kwargs) == 0:
+                    try:
+                        kwargs = {pname : self.noisedict[self.name+'_red_noise_'+pname] for pname in spec_params[spectrum]}
+                    except:
+                        print('PSD parameters must be in noisedict or parsed as input.')
+                        return
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_red_noise', kwargs)
 
@@ -278,6 +293,12 @@ class Pulsar:
             if spectrum is 'custom':
                 psd = kwargs['custom_psd']
             elif spectrum in [*spec]:
+                if len(kwargs) == 0:
+                    try:
+                        kwargs = {pname : self.noisedict[self.name+'_dm_gp_'+pname] for pname in spec_params[spectrum]}
+                    except:
+                        print('PSD parameters must be in noisedict or parsed as input.')
+                        return
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_dm_gp', kwargs)
 
@@ -297,6 +318,12 @@ class Pulsar:
             if spectrum is 'custom':
                 psd = kwargs['custom_psd']
             elif spectrum in [*spec]:
+                if len(kwargs) == 0:
+                    try:
+                        kwargs = {pname : self.noisedict[self.name+'_chrom_gp_'+pname] for pname in spec_params[spectrum]}
+                    except:
+                        print('PSD parameters must be in noisedict or parsed as input.')
+                        return
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_chrom_gp', kwargs)
 
@@ -315,6 +342,12 @@ class Pulsar:
         if spectrum is 'custom':
             psd = kwargs['custom_psd']
         elif spectrum in [*spec]:
+            if len(kwargs) == 0:
+                try:
+                    kwargs = {pname : self.noisedict[self.name+'_system_noise_'+str(backend)+'_'+pname] for pname in spec_params[spectrum]}
+                except:
+                    print('PSD parameters must be in noisedict or parsed as input.')
+                    return
             psd = spec[spectrum](f_psd, kwargs)
             self.update_noisedict(self.name+'_system_noise_'+str(backend), kwargs)
 
@@ -518,7 +551,7 @@ class Pulsar:
                     self.noisedict.pop(key)
 
 
-def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, freqs=[1400], isotropic=False, backends=None, noisedict=None, custom_model=None):
+def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, freqs=[1400], isotropic=False, backends=None, noisedict=None, custom_model=None, ephem=None):
 
     if isotropic:
         # Fibonacci sequence on sphere
@@ -596,7 +629,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
     for i in range(npsrs):
         if custom_model is None:
             custom_model = None
-        psr = Pulsar(toas[i], toaerr[i], np.arccos(costhetas[i]), phis[i], pdist[i], freqs=freqs, backends=backends[i], custom_noisedict=noisedict, custom_model=custom_model, tm_params={'F0':(F0[i], np.random.uniform(1e-13, 1e-12))})
+        psr = Pulsar(toas[i], toaerr[i], np.arccos(costhetas[i]), phis[i], pdist[i], freqs=freqs, backends=backends[i], custom_noisedict=noisedict, custom_model=custom_model, tm_params={'F0':(F0[i], np.random.uniform(1e-13, 1e-12))}, ephem=ephem)
         print('Creating psr', psr.name)
         psr.add_white_noise()
         psr.add_red_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5))

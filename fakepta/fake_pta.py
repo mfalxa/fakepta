@@ -12,7 +12,13 @@ except:
 
 # load spectrum functions from "spectrum.py"
 module = importlib.import_module('fakepta.spectrum')
-spec = dict(inspect.getmembers(module, inspect.isfunction))
+spec = inspect.getmembers(module, inspect.isfunction)
+spec_params = {}
+for s_name, s_obj in spec:
+    pnames = [*inspect.signature(s_obj).parameters]
+    pnames.remove('f')
+    spec_params[s_name] = pnames
+spec = dict(spec)
 
 class Pulsar:
 
@@ -260,6 +266,12 @@ class Pulsar:
             if spectrum is 'custom':
                 psd = kwargs['custom_psd']
             elif spectrum in [*spec]:
+                if len(kwargs) == 0:
+                    try:
+                        kwargs = {pname : self.noisedict[self.name+'_red_noise_'+pname] for pname in spec_params[spectrum]}
+                    except:
+                        print('PSD parameters must be in noisedict or parsed as input.')
+                        return
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_red_noise', kwargs)
 
@@ -279,6 +291,12 @@ class Pulsar:
             if spectrum is 'custom':
                 psd = kwargs['custom_psd']
             elif spectrum in [*spec]:
+                if len(kwargs) == 0:
+                    try:
+                        kwargs = {pname : self.noisedict[self.name+'_dm_gp_'+pname] for pname in spec_params[spectrum]}
+                    except:
+                        print('PSD parameters must be in noisedict or parsed as input.')
+                        return
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_dm_gp', kwargs)
 
@@ -298,6 +316,12 @@ class Pulsar:
             if spectrum is 'custom':
                 psd = kwargs['custom_psd']
             elif spectrum in [*spec]:
+                if len(kwargs) == 0:
+                    try:
+                        kwargs = {pname : self.noisedict[self.name+'_chrom_gp_'+pname] for pname in spec_params[spectrum]}
+                    except:
+                        print('PSD parameters must be in noisedict or parsed as input.')
+                        return
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_chrom_gp', kwargs)
 
@@ -316,6 +340,12 @@ class Pulsar:
         if spectrum is 'custom':
             psd = kwargs['custom_psd']
         elif spectrum in [*spec]:
+            if len(kwargs) == 0:
+                try:
+                    kwargs = {pname : self.noisedict[self.name+'_system_noise_'+str(backend)+'_'+pname] for pname in spec_params[spectrum]}
+                except:
+                    print('PSD parameters must be in noisedict or parsed as input.')
+                    return
             psd = spec[spectrum](f_psd, kwargs)
             self.update_noisedict(self.name+'_system_noise_'+str(backend), kwargs)
 
