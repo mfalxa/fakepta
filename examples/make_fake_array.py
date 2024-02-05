@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pickle, json
 import scipy.constants as sc
-from fakepta.correlated_noises import add_correlated_red_noise_gp
+from fakepta.correlated_noises import add_common_correlated_noise
 
 ''' Make fake array of 25 pulsars with :
     - Tobs : observation time for each pulsar (in years)
@@ -44,7 +44,7 @@ for psr in psrs:
 
 ''' Inject GWB'''
 print('Injecting GWB')
-add_correlated_red_noise_gp(psrs, log10_A=-15., gamma=13/3, orf='hd')
+add_common_correlated_noise(psrs, log10_A=-15., gamma=13/3, orf='hd')
 
 ''' Inject CGW '''
 params = {}
