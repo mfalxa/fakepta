@@ -1,11 +1,15 @@
 import numpy as np
 import enterprise.constants as const
+from scipy.optimize import newton
 
 class Ephemerids:
 
     def __init__(self):
 
         self.planets = {}
+        #
+        # orbital elements taken from : https://ssd.jpl.nasa.gov/planets/approx_pos.html
+        # 
         # mass = planet mass [kg]
         # T = orbital period [days]
         # inc : inclination of orbit [deg]
@@ -13,6 +17,7 @@ class Ephemerids:
         # omega : argument of periapsis [deg]
         # a : semi major axis [AU]
         # l0 : mean longitude at epoch [deg]
+        #
         self.planets['mercury'] = {'mass':3.301*1e23, 'T':87.9691 , 'inc':7.00487, 'Om':48.33167, 'omega':77.45645, 'a':0.38709893, 'e':0.20563069, 'l0':252.25}
         self.planets['venus'] = {'mass':4.867*1e24, 'T':224.7, 'inc':3.39471, 'Om':76.68069, 'omega':131.53298, 'a':0.72333199, 'e':0.00677323, 'l0':181.98}
         self.planets['earth'] = {'mass':5.972*1e24, 'T':365.25636, 'inc':0.00005, 'Om':-11.26064, 'omega':102.94719, 'a':1.00000011, 'e':0.01671022, 'l0':100.47}
@@ -25,17 +30,35 @@ class Ephemerids:
         self.planet_names = [*self.planets]
         self.mass_ss = const.Msun + np.sum([self.planets[planet]['mass'] for planet in [*self.planets]])
         
-    def do_rotation_pf_to_eq(self, vec, Om, omega, inc):
+    def do_rotation_op_to_eq(self, vec, Om, omega, inc):
 
-        inc += 23.4
+        ec = 23.43 * np.pi/180
         inc *= np.pi/180
         Om *= np.pi/180
         omega *= np.pi/180
-        rot = np.array([[np.cos(Om)*np.cos(omega) - np.sin(Om)*np.cos(inc)*np.sin(omega), -np.cos(Om)*np.sin(omega) - np.sin(Om)*np.cos(inc)*np.cos(omega), np.sin(Om)*np.sin(inc)],
-                        [np.sin(Om)*np.cos(omega) + np.cos(Om)*np.cos(inc)*np.sin(omega), -np.sin(Om)*np.sin(omega) + np.cos(Om)*np.cos(inc)*np.cos(omega), -np.cos(Om)*np.sin(inc)],
-                        [np.sin(inc)*np.sin(omega), np.sin(inc)*np.cos(omega), np.cos(inc)]])
-        
-        return np.dot(rot, vec)
+        rot = np.array([[np.cos(Om)*np.cos(omega) - np.sin(Om)*np.cos(inc)*np.sin(omega), -np.cos(Om)*np.sin(omega) - np.sin(Om)*np.cos(inc)*np.cos(omega), 0.],
+                        [np.sin(Om)*np.cos(omega) + np.cos(Om)*np.cos(inc)*np.sin(omega), -np.sin(Om)*np.sin(omega) + np.cos(Om)*np.cos(inc)*np.cos(omega), 0.],
+                        [np.sin(inc)*np.sin(omega), np.sin(inc)*np.cos(omega), 0.]])
+        rot_ec = np.array([[1., 0., 0],
+                            [0., np.cos(ec), -np.sin(ec)],
+                            [0., np.sin(ec), np.cos(ec)]])
+
+        return np.dot(rot_ec, np.dot(rot, vec))
+    
+    def mean_anomaly(times, T, l0):
+
+        M = 2*np.pi / T * times / const.day + l0 * np.pi / 180
+
+        return M
+    
+    def solve_kepler_equation(M, e):
+
+        E = np.zeros(len(M))
+        E[0] = M[0] - e*np.sin(M[0])
+        for i in range(len(M)-1):
+            E[i+1] = newton(lambda x : M[i+1] - (x - e*np.sin(x)), E[i])
+
+        return E
 
     def compute_orbit(self, times, T, Om, omega, inc, a, e, l0, mass=None):
 
@@ -45,20 +68,22 @@ class Ephemerids:
             a *= const.AU / const.c
 
         # mean anomaly
-        M = 2*np.pi / T * times / const.day + l0 * np.pi / 180
+        t0 = 0. # need readjust to J2000
+        M = self.mean_anomaly(times - t0, T, l0 - omega)
 
-        # first order eccentric perturbation
-        r = a * (1 - e * np.cos(M))
+        # solve kepler equation for eccentric anomaly
+        E = self.solve_kepler_equation(M, e)
 
-        x = r * np.cos(M)
-        y = r * np.sin(M)
+        # orbit trajectory in orbital plane
+        x = a * np.cos(E - e)
+        y = a * np.sqrt(1 - e**2) * np.sin(E)
         z = np.zeros(len(times))
 
-        # rotation to equatorial plane
+        # rotation from orbital plane to equatorial plane
         pos = np.vstack((x, y, z)).T
         pos_eq = np.zeros(np.shape(pos))
         for i, v0 in enumerate(pos):
-            pos_eq[i] = self.do_rotation_pf_to_eq(v0, Om, omega, inc)
+            pos_eq[i] = self.do_rotation_op_to_eq(v0, Om, omega - Om, inc)
 
         return pos_eq
     
