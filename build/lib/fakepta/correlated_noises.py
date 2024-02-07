@@ -108,7 +108,12 @@ def curn(psrs):
     return np.eye(npsr)
 
 # Noise generating function
-def add_common_correlated_noise(psrs, orf='hd', spectrum='powerlaw', idx=0, components=30, freqf=1400, custom_psd=None, f_psd=None, h_map=None, **kwargs):
+def add_common_correlated_noise(psrs, orf='hd', spectrum='powerlaw', name='gw', idx=0, components=30, freqf=1400, custom_psd=None, f_psd=None, h_map=None, **kwargs):
+
+    if name is not None:
+        signal_name = name + '_common'
+    else:
+        signal_name = 'common'
 
     Tspan = np.amax([psr.toas.max() for psr in psrs]) - np.amin([psr.toas.min() for psr in psrs])
     if f_psd is None:
@@ -122,18 +127,22 @@ def add_common_correlated_noise(psrs, orf='hd', spectrum='powerlaw', idx=0, comp
     elif spectrum in [*spec]:
         psd_gwb = spec[spectrum](f_psd, **kwargs)
         for psr in psrs:
-            psr.update_noisedict('common_'+orf, kwargs)
+            psr.update_noisedict(signal_name, kwargs)
 
     # save noise properties in signal model
     for psr in psrs:
-        psr.signal_model['common'] = {}
-        psr.signal_model['common']['orf'] = orf
-        psr.signal_model['common']['spectrum'] = spectrum
-        psr.signal_model['common']['hmap'] = h_map
-        psr.signal_model['common']['f'] = f_psd
-        psr.signal_model['common']['psd'] = psd_gwb
-        psr.signal_model['common']['fourier'] = np.vstack((np.zeros(components), np.zeros(components)))
-        psr.signal_model['common']['nbin'] = components
+        if signal_name in [*psr.signal_model]:
+            psr.residuals -= psr.reconstruct_signal(signals=[signal_name])
+
+        psr.signal_model[signal_name] = {}
+        psr.signal_model[signal_name]['orf'] = orf
+        psr.signal_model[signal_name]['spectrum'] = spectrum
+        psr.signal_model[signal_name]['hmap'] = h_map
+        psr.signal_model[signal_name]['f'] = f_psd
+        psr.signal_model[signal_name]['psd'] = psd_gwb
+        psr.signal_model[signal_name]['fourier'] = np.vstack((np.zeros(components), np.zeros(components)))
+        psr.signal_model[signal_name]['nbin'] = components
+        psr.signal_model[signal_name]['idx'] = idx
     
     psd_gwb = np.repeat(psd_gwb, 2)
     coeffs = np.sqrt(psd_gwb)

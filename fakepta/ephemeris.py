@@ -1,6 +1,7 @@
 import numpy as np
 import enterprise.constants as const
 from scipy.optimize import newton
+import matplotlib.pyplot as plt
 
 class Ephemeris:
 
@@ -32,7 +33,7 @@ class Ephemeris:
         
     def do_rotation_op_to_eq(self, vec, Om, omega, inc):
 
-        ec = 23.43 * np.pi/180
+        ec = 23.43928 * np.pi/180
         inc *= np.pi/180
         Om *= np.pi/180
         omega *= np.pi/180
@@ -45,37 +46,32 @@ class Ephemeris:
 
         return np.dot(rot_ec, np.dot(rot, vec))
     
-    def mean_anomaly(self, times, T, l0):
-
-        M = 2*np.pi / T * times / const.day + l0 * np.pi / 180
-
-        return M
-    
     def solve_kepler_equation(self, M, e):
 
         E = np.zeros(len(M))
-        E[0] = newton(lambda x : M[0] - (x - e*np.sin(x)), M[0])
+        E[0] = newton(lambda x : M[0] - (x - e[0]*np.sin(x)), M[0])
         for i in range(len(M)-1):
-            E[i+1] = newton(lambda x : M[i+1] - (x - e*np.sin(x)), E[i])
+            E[i+1] = newton(lambda x : M[i+1] - (x - e[i+1]*np.sin(x)), E[i])
 
         return E
 
-    def compute_orbit(self, times, T, Om, omega, inc, a, e, l0, mass=None):
+    def compute_orbit(self, times, name, T, Om, omega, inc, a, e, l0, mass=None):
 
         if a is None:
             a = [(const.GMsun * (T*const.day)**2 / (4*np.pi**2))**(1/3) / const.AU, 0.]
 
-        # redefine orbital elements at epoch t0
-        t0 = (times[0] / 24 / 3600 - 2451545) / 36525
-        Om = Om[0] + Om[1] * t0
-        omega = omega[0] + omega[1] * t0
-        inc = inc[0] + inc[1] * t0
-        a = (a[0] + a[1] * t0) * const.AU / const.c
-        e = e[0] + e[1] * t0
-        l0 = l0[0] + l0[1] * t0
+        # redefine orbital elements at epoch t, pulsar toas in seconds MJD
+        # t in century -> (times [s] / 24 / 3600 + MJD [day] - JD [day]) / 365.25 / 100
+        t = (times / 24 / 3600 + 2400000.5 - 2451545) / 36525
+        Om = Om[0] + Om[1] * t
+        omega = omega[0] + omega[1] * t
+        inc = inc[0] + inc[1] * t
+        a = (a[0] + a[1] * t) * const.AU / const.c
+        e = e[0] + e[1] * t
+        l0 = l0[0] + l0[1] * t
 
         # mean anomaly
-        M = self.mean_anomaly(times, T, l0 - omega)
+        M = (l0 - omega) * np.pi / 180
         M = np.mod(M, 2*np.pi)
 
         # solve kepler equation for eccentric anomaly
@@ -90,13 +86,13 @@ class Ephemeris:
         pos = np.vstack((x, y, z)).T
         pos_eq = np.zeros(np.shape(pos))
         for i, v0 in enumerate(pos):
-            pos_eq[i] = self.do_rotation_op_to_eq(v0, Om, omega - Om, inc)
+            pos_eq[i] = self.do_rotation_op_to_eq(v0, Om[i], omega[i] - Om[i], inc[i])
 
         return pos_eq
     
     def get_orbit_planet(self, times, planet):
 
-        return self.compute_orbit(times, **self.planets[planet])
+        return self.compute_orbit(times, planet, **self.planets[planet])
     
     def get_planet_ssb(self, times):
 

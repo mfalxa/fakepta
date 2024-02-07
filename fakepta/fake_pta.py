@@ -532,7 +532,7 @@ class Pulsar:
                 for ncgw in len(self.signal_model['cgw']):
                     sig += det.cw_delay(self.toas, self.pos, self.pdist,
                                         **self.signal_model['cgw'][str(ncgw)])
-            if signal in ['red_noise', 'dm_gp', 'chrom_gp', 'common']:
+            if (signal in ['red_noise', 'dm_gp', 'chrom_gp']) or ('common' in signal):
                 f = self.signal_model[signal]['f']
                 idx = self.signal_model[signal]['idx']
                 df = np.diff(np.append(0., f))
