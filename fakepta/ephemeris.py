@@ -137,6 +137,6 @@ class Ephemeris:
         d_ssb /= self.mass_ss
 
         # get Roemer delay
-        dt_roemer = -np.dot(d_ssb, psr_pos)
+        dt_roemer = np.dot(d_ssb, psr_pos)
 
         return dt_roemer
