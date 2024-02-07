@@ -377,6 +377,7 @@ class Pulsar:
         self.signal_model[signal]['psd'] = psd[::2]
         self.signal_model[signal]['fourier'] = np.vstack((coeffs[::2] / df**0.5, coeffs[1::2] / df**0.5))
         self.signal_model[signal]['nbin'] = len(f_psd)
+        self.signal_model[signal]['idx'] = idx
         
         for i in range(len(f_psd)):
             self.residuals[mask] += (freqf/self.freqs)**idx * df[i]**0.5 * coeffs[2*i] * np.cos(2*np.pi*f_psd[i]*self.toas[mask])
@@ -404,14 +405,14 @@ class Pulsar:
         f = self.signal_model[signal]['f']
         psd = self.signal_model[signal]['psd']
         components = self.signal_model[signal]['nbin']
+        idx = self.signal_model[signal]['idx']
 
         df = np.diff(np.append(0, f))
         psd = np.repeat(psd * df, 2)
         basis = np.zeros((len(self.toas[mask]), 2*components))
-        idx = {'red_noise':0, 'dm_gp':2, 'chrom_gp':4}
         for i in range(components):
-            basis[:, 2*i] = (freqf/self.freqs)**idx[signal] * np.cos(2*np.pi*f[i]*self.toas[mask])
-            basis[:, 2*i+1] = (freqf/self.freqs)**idx[signal] * np.sin(2*np.pi*f[i]*self.toas[mask])
+            basis[:, 2*i] = (freqf/self.freqs)**idx * np.cos(2*np.pi*f[i]*self.toas[mask])
+            basis[:, 2*i+1] = (freqf/self.freqs)**idx * np.sin(2*np.pi*f[i]*self.toas[mask])
         cov = np.dot(basis, np.dot(np.diag(psd), basis.T))
         return cov
         
@@ -436,6 +437,20 @@ class Pulsar:
                             log10_h=log10_h, phase0=phase0, 
                             psi=psi, psrTerm=psrterm)
         self.residuals += cgw
+
+    def add_deterministic(self, waveform, **kwargs):
+
+        fname = waveform.__name__
+        if fname in self.signal_model:
+            ndet = len(self.signal_model[fname])
+        else:
+            self.signal_model[fname] = {}
+            ndet = 0
+
+        self.signal_model[fname][str(ndet)] = kwargs
+
+        self.residuals += waveform(toas=self.toas, **kwargs)
+
 
     def radec_to_thetaphi(ra, dec):
 
@@ -512,7 +527,6 @@ class Pulsar:
         if signals is None:
             signals = [*self.signal_model]
         sig = np.zeros(len(self.toas))
-        idx = {'red_noise':0, 'dm_gp':2, 'chrom_gp':4}
         for signal in signals:
             if signal == 'cgw':
                 for ncgw in len(self.signal_model['cgw']):
@@ -520,11 +534,12 @@ class Pulsar:
                                         **self.signal_model['cgw'][str(ncgw)])
             if signal in ['red_noise', 'dm_gp', 'chrom_gp', 'common']:
                 f = self.signal_model[signal]['f']
+                idx = self.signal_model[signal]['idx']
                 df = np.diff(np.append(0., f))
                 c = self.signal_model[signal]['fourier']
                 for c_k, f_k, df_k in zip(c.T, f, df):
-                    sig += df_k * c_k[0] * (freqf/self.freqs)**idx[signal] * np.cos(2*np.pi*f_k * self.toas)
-                    sig += df_k * c_k[1] * (freqf/self.freqs)**idx[signal] * np.sin(2*np.pi*f_k * self.toas)
+                    sig += df_k * c_k[0] * (freqf/self.freqs)**idx * np.cos(2*np.pi*f_k * self.toas)
+                    sig += df_k * c_k[1] * (freqf/self.freqs)**idx * np.sin(2*np.pi*f_k * self.toas)
             if 'system_noise' in signal:
                 backend = signal.split('system_noise_')[1]
                 mask = self.backend_flags == backend
