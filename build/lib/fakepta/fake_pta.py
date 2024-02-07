@@ -15,10 +15,8 @@ module = importlib.import_module('fakepta.spectrum')
 spec = inspect.getmembers(module, inspect.isfunction)
 spec_params = {}
 for s_name, s_obj in spec:
-    print(s_name, s_obj)
     pnames = [*inspect.signature(s_obj).parameters]
     pnames.remove('f')
-    print(pnames)
     spec_params[s_name] = pnames
 spec = dict(spec)
 
