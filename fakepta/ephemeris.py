@@ -55,7 +55,7 @@ class Ephemeris:
 
         return E
 
-    def compute_orbit(self, times, name, T, Om, omega, inc, a, e, l0, mass=None):
+    def compute_orbit(self, times, T, Om, omega, inc, a, e, l0, mass=None):
 
         if a is None:
             a = [(const.GMsun * (T*const.day)**2 / (4*np.pi**2))**(1/3) / const.AU, 0.]
@@ -92,7 +92,7 @@ class Ephemeris:
     
     def get_orbit_planet(self, times, planet):
 
-        return self.compute_orbit(times, planet, **self.planets[planet])
+        return self.compute_orbit(times, **self.planets[planet])
     
     def get_planet_ssb(self, times):
 
@@ -118,18 +118,25 @@ class Ephemeris:
     def roemer_delay(self, toas, psr_pos, planet, d_mass=0., d_Om=0., d_omega=0., d_inc=0., d_a=0., d_e=0., d_l0=0.):
 
         # get parameters
-        t0 = (toas[0] / 24 / 3600 - 2451545) / 36525
-        mass = self.planets[planet]['mass']
-        T = self.planets[planet]['T']
-        Om = self.planets[planet]['Om'][0] + self.planets[planet]['Om'][1] * t0
-        omega = self.planets[planet]['omega'][0] + self.planets[planet]['omega'][1] * t0
-        inc = self.planets[planet]['inc'][0] + self.planets[planet]['inc'][1] * t0
-        a = self.planets[planet]['a'][0] + self.planets[planet]['a'][1] * t0
-        e = self.planets[planet]['e'][0] + self.planets[planet]['e'][1] * t0
-        l0 = self.planets[planet]['l0'][0] + self.planets[planet]['l0'][1] * t0
+        mass_p = self.planets[planet]['mass']
+        T_p = self.planets[planet]['T']
+        Om_p = self.planets[planet]['Om']
+        omega_p = self.planets[planet]['omega']
+        inc_p = self.planets[planet]['inc']
+        a_p = self.planets[planet]['a']
+        e_p = self.planets[planet]['e']
+        l0_p = self.planets[planet]['l0']
+
+        # add deviation
+        Om_p[0] += d_Om
+        omega_p[0] += d_omega
+        inc_p[0] += d_inc
+        a_p[0] += d_a
+        e_p[0] += d_e
+        l0_p[0] += d_l0
 
         # compute deviation from SSB position estimate
-        d_ssb = (mass + d_mass) * self.compute_orbit(toas, T, Om+d_Om, omega+d_omega, inc+d_inc, a+d_a, e+d_e, l0+d_l0) - mass * self.get_orbit_planet(toas, planet)
+        d_ssb = (mass_p + d_mass) * self.compute_orbit(toas, T_p, Om_p, omega_p, inc_p, a_p, e_p, l0_p) - mass_p * self.get_orbit_planet(toas, planet)
         d_ssb /= self.mass_ss
 
         # get Roemer delay
