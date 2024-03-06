@@ -121,7 +121,6 @@ def add_common_correlated_noise(psrs, orf='hd', spectrum='powerlaw', name='gw', 
     df = np.diff(np.append(0., f_psd))
     if spectrum is 'custom':
         # assert f_psd is None, '"f_psd" must not be None. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
-        custom_psd = kwargs['custom_psd']
         assert len(custom_psd) == len(f_psd), '"custom_psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
         psd_gwb = custom_psd
     elif spectrum in [*spec]:
@@ -131,6 +130,7 @@ def add_common_correlated_noise(psrs, orf='hd', spectrum='powerlaw', name='gw', 
 
     # save noise properties in signal model
     for psr in psrs:
+        psr.signal_model = {}
         if signal_name in [*psr.signal_model]:
             psr.residuals -= psr.reconstruct_signal(signals=[signal_name])
 
