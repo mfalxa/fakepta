@@ -130,7 +130,6 @@ def add_common_correlated_noise(psrs, orf='hd', spectrum='powerlaw', name='gw', 
 
     # save noise properties in signal model
     for psr in psrs:
-        psr.signal_model = {}
         if signal_name in [*psr.signal_model]:
             psr.residuals -= psr.reconstruct_signal(signals=[signal_name])
 
