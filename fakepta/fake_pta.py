@@ -142,6 +142,8 @@ class Pulsar:
                 noisedict[self.name+'_chrom_gp_gamma'] = custom_noisedict[key_gam]
             except:
                 pass
+        
+        self.noisedict = noisedict
 
     def init_tm_pars(self, timing_model):
 
@@ -630,6 +632,9 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
     elif isinstance(backends, list):
         if not isinstance(backends[0], list):
             backends = [backends] * npsrs
+    
+    # Init noise properties
+
 
     assert (len(Tobs) == npsrs), '"Tobs" must be same size as "npsrs"'
     assert (len(ntoas) == npsrs), '"ntoas" must be same size as "npsrs"'
@@ -645,9 +650,20 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
         psr = Pulsar(toas[i], toaerr[i], np.arccos(costhetas[i]), phis[i], pdist[i], freqs=freqs, backends=backends[i], custom_noisedict=noisedict, custom_model=custom_model, tm_params={'F0':(F0[i], np.random.uniform(1e-13, 1e-12))}, ephem=ephem)
         print('Creating psr', psr.name)
         psr.add_white_noise()
-        psr.add_red_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5))
-        psr.add_dm_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5))
-        psr.add_chromatic_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5))
+        try:
+            psr.add_red_noise(spectrum='powerlaw', log10_A=psr.noisedict[psr.name+'_red_noise_log10_A'], gamma=psr.noisedict[psr.name+'_red_noise_gamma'])
+        except:
+            psr.add_red_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5))
+        
+        try:
+            psr.add_dm_noise(spectrum='powerlaw', log10_A=psr.noisedict[psr.name+'_dm_gp_log10_A'], gamma=psr.noisedict[psr.name+'_dm_gp_gamma'])
+        except:
+            psr.add_dm_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5))
+        
+        try:
+            psr.add_chromatic_noise(spectrum='powerlaw', log10_A=psr.noisedict[psr.name+'_chrom_gp_log10_A'], gamma=psr.noisedict[psr.name+'_chrom_gp_gamma'])
+        except:
+            psr.add_chromatic_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5))
         psrs.append(psr)
 
     return psrs
