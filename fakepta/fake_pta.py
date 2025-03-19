@@ -596,7 +596,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
     elif isinstance(ntoas, float) or isinstance(ntoas, int):
         F0 = 200 * np.ones(npsrs)
         ntoas = np.int32(ntoas * np.ones(npsrs))
-        cadence = Tobs * yr / ntoas
+        cadence = Tobs * yr / (ntoas - 1)
 
     # Init TOAs from latest observation time
     Tmax = np.amax(Tobs)
