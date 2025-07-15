@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle, json
+import logging
 from scipy.optimize import fsolve
 from enterprise_extensions import deterministic as det
 import scipy.constants as sc
@@ -8,7 +9,7 @@ import importlib, inspect
 try:
     import healpy as hp
 except:
-    print('healpy module not found.')
+    logging.warning('healpy module not found.')
 
 # load spectrum functions from "spectrum.py"
 module = importlib.import_module('fakepta.spectrum')
@@ -265,14 +266,14 @@ class Pulsar:
             if 'red_noise' in self.signal_model:
                 self.residuals -= self.reconstruct_signal(['red_noise'])
 
-            if spectrum is 'custom':
+            if spectrum == 'custom':
                 psd = kwargs['custom_psd']
             elif spectrum in [*spec]:
                 if len(kwargs) == 0:
                     try:
                         kwargs = {pname : self.noisedict[self.name+'_red_noise_'+pname] for pname in spec_params[spectrum]}
                     except:
-                        print('PSD parameters must be in noisedict or parsed as input.')
+                        logging.error('PSD parameters must be in noisedict or parsed as input.')
                         return
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_red_noise', kwargs)
@@ -290,14 +291,14 @@ class Pulsar:
             if 'dm_gp' in self.signal_model:
                 self.residuals -= self.reconstruct_signal(['dm_gp'])
 
-            if spectrum is 'custom':
+            if spectrum == 'custom':
                 psd = kwargs['custom_psd']
             elif spectrum in [*spec]:
                 if len(kwargs) == 0:
                     try:
                         kwargs = {pname : self.noisedict[self.name+'_dm_gp_'+pname] for pname in spec_params[spectrum]}
                     except:
-                        print('PSD parameters must be in noisedict or parsed as input.')
+                        logging.error('PSD parameters must be in noisedict or parsed as input.')
                         return
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_dm_gp', kwargs)
@@ -315,14 +316,14 @@ class Pulsar:
             if 'chrom_gp' in self.signal_model:
                 self.residuals -= self.reconstruct_signal(['chrom_gp'])
 
-            if spectrum is 'custom':
+            if spectrum == 'custom':
                 psd = kwargs['custom_psd']
             elif spectrum in [*spec]:
                 if len(kwargs) == 0:
                     try:
                         kwargs = {pname : self.noisedict[self.name+'_chrom_gp_'+pname] for pname in spec_params[spectrum]}
                     except:
-                        print('PSD parameters must be in noisedict or parsed as input.')
+                        logging.error('PSD parameters must be in noisedict or parsed as input.')
                         return
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_chrom_gp', kwargs)
@@ -339,14 +340,14 @@ class Pulsar:
         if 'system_noise_'+str(backend) in self.signal_model:
             self.residuals -= self.reconstruct_signal(['system_noise_'+str(backend)])
 
-        if spectrum is 'custom':
+        if spectrum == 'custom':
             psd = kwargs['custom_psd']
         elif spectrum in [*spec]:
             if len(kwargs) == 0:
                 try:
                     kwargs = {pname : self.noisedict[self.name+'_system_noise_'+str(backend)+'_'+pname] for pname in spec_params[spectrum]}
                 except:
-                    print('PSD parameters must be in noisedict or parsed as input.')
+                    logging.error('PSD parameters must be in noisedict or parsed as input.')
                     return
             psd = spec[spectrum](f_psd, kwargs)
             self.update_noisedict(self.name+'_system_noise_'+str(backend), kwargs)
@@ -361,7 +362,7 @@ class Pulsar:
             signal = backend + '_' + signal
             mask = self.backend_flags == backend
             if not np.any(mask):
-                print(backend, 'not found in backend_flags.')
+                logging.error(backend, 'not found in backend_flags.')
                 return
         else:
             mask = np.ones(len(self.toas), dtype='bool')
@@ -398,7 +399,7 @@ class Pulsar:
             signal = backend + '_' + signal
             mask = self.backend_flags == backend
             if not np.any(mask):
-                print(backend, 'not found in backend_flags.')
+                logging.error(backend, 'not found in backend_flags.')
                 return
         else:
             mask = np.ones(len(self.toas), dtype='bool')
@@ -648,7 +649,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
         if custom_model is None:
             custom_model = None
         psr = Pulsar(toas[i], toaerr[i], np.arccos(costhetas[i]), phis[i], pdist[i], freqs=freqs, backends=backends[i], custom_noisedict=noisedict, custom_model=custom_model, tm_params={'F0':(F0[i], np.random.uniform(1e-13, 1e-12))}, ephem=ephem)
-        print('Creating psr', psr.name)
+        logging.info('Creating psr', psr.name)
         psr.add_white_noise()
         try:
             psr.add_red_noise(spectrum='powerlaw', log10_A=psr.noisedict[psr.name+'_red_noise_log10_A'], gamma=psr.noisedict[psr.name+'_red_noise_gamma'])
