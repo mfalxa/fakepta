@@ -4,7 +4,9 @@ Tool for Pulsar Timing Array (PTA) simulation allowing to create pickle objects 
 # Installation
 
 ``` python
-python setup.py install
+git@github.com:mfalxa/fakepta.git
+cd fakepta
+python3 setup.py install
 ```
 
 # Quick start
