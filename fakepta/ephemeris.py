@@ -78,7 +78,7 @@ class Ephemeris:
         E = self.solve_kepler_equation(M, e)
 
         # orbit trajectory in orbital plane
-        x = a * np.cos(E - e)
+        x = a * (np.cos(E) - e)
         y = a * np.sqrt(1 - e**2) * np.sin(E)
         z = np.zeros(len(times))
 
