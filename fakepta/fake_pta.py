@@ -1,11 +1,15 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import pickle, json
+import importlib
+import inspect
+import json
 import logging
-from scipy.optimize import fsolve
-from enterprise_extensions import deterministic as det
+import pickle
+
+import matplotlib.pyplot as plt
+import numpy as np
 import scipy.constants as sc
-import importlib, inspect
+from enterprise_extensions import deterministic as det
+from scipy.optimize import fsolve
+
 try:
     import healpy as hp
 except:
