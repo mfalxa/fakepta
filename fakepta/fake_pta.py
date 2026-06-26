@@ -27,29 +27,47 @@ spec = dict(spec)
 
 class Pulsar:
 
-    def __init__(self, toas, toaerr, theta, phi, pdist=(1., 0.2), freqs=[1400], custom_noisedict=None, custom_model=None, tm_params=None, backends=['backend'], ephem=None):
+    def __init__(self, toas, toaerr, theta, phi, pdist=(1., 0.2),
+                 backend_config=None, custom_noisedict=None, custom_model=None,
+                 tm_params=None, ephem=None):
+
+        if backend_config is None:
+            backend_config = {'backend': [1400]}
+        self.backend_config = backend_config  # {backend_name: [subband_freqs]}
+        self.backends = list(backend_config.keys())
+        # Store which backends have sub band ToAs
+        self.ecorr_backends = [backend for backend in self.backends 
+                               if len(backend_config[backend]) > 1]
 
         self.nepochs = len(toas)
-        self.toas = np.repeat(toas, len(backends))
+
+        # For each epoch, randomly assign one backend
+        self.epoch_backends = np.random.choice(self.backends, size=self.nepochs, replace=True)
+
+        # Build TOA, freq, and backend_flag arrays
+        exp_toas, exp_freqs, exp_backend_flags = self.get_expanded_toas(
+            toas, backend_config
+        )
+        self.toas = np.array(exp_toas)
+        self.freqs = np.array(exp_freqs)
+        self.backend_flags = np.array(exp_backend_flags)
         self.toaerrs = toaerr * np.ones(len(self.toas))
         self.residuals = np.zeros(len(self.toas))
         self.Tspan = np.amax(self.toas) - np.amin(self.toas)
+
         if custom_model is None:
-            self.custom_model = {'RN':30, 'DM':100, 'Sv':None}
+            self.custom_model = {'RN': 30, 'DM': 100, 'Sv': None}
         else:
             self.custom_model = custom_model
         self.signal_model = {}
         self.flags = {}
         self.flags['pta'] = ['FAKE'] * len(self.toas)
-        # self.freqs = np.tile(freqs, self.nepochs)
-        # self.backend_flags = np.random.choice(backends, size=len(self.toas), replace=True)
-        # self.backend_flags = np.array([bf+'.'+str(int(f)) for bf, f in zip(self.backend_flags, self.freqs)])
-        self.freqs, self.backend_flags = self.get_freqs_and_backends(freqs, backends)
-        self.backends = np.unique(self.backend_flags)
-        self.freqs = abs(self.freqs + np.random.normal(scale=10, size=len(self.freqs)))
+
         self.theta = theta
         self.phi = phi
-        self.pos = np.array([np.cos(phi)*np.sin(theta), np.sin(phi)*np.sin(theta), np.cos(theta)])
+        self.pos = np.array([np.cos(phi)*np.sin(theta),
+                             np.sin(phi)*np.sin(theta),
+                             np.cos(theta)])
         if ephem is not None:
             self.ephem = ephem
             self.planetssb = ephem.get_planet_ssb(self.toas)
@@ -57,6 +75,7 @@ class Pulsar:
         else:
             self.planetssb = None
             self.pos_t = None
+
         self.pdist = pdist
         self.name = self.get_psrname()
         self.init_tm_pars(tm_params)
@@ -64,90 +83,70 @@ class Pulsar:
         self.fitpars = [*self.tm_pars]
         self.init_noisedict(custom_noisedict)
 
-    def get_freqs_and_backends(self, freqs, backends):
+    def get_expanded_toas(self, toas, backend_config, freq_scale=5):
+        # Each epoch contributes len(backend_config[assigned_backend]) TOAs
+        exp_toas = []
+        exp_freqs = []
+        exp_backend_flags = []
 
-        b_freqs = []
-        backend_flags = np.tile(backends, self.nepochs)
-        for i in range(len(backend_flags)):
-            try:
-                b_freqs.append(float(backend_flags[i].split('.')[-1]))
-            except:
-                obs_freqs = np.random.choice(freqs)
-                backend_flags[i] = backend_flags[i] + '.' + str(int(obs_freqs))
-                b_freqs.append(obs_freqs)
-        return np.array(b_freqs), backend_flags
+        for i, (t, backend) in enumerate(zip(toas, self.epoch_backends)):
+            subband_freqs = backend_config[backend]
+            n_sub = len(subband_freqs)
+            # NOTE: in theory those should not be strictly equal
+            exp_toas.extend([t] * n_sub)
+            for f in subband_freqs:
+                exp_freqs.append(abs(f + np.random.normal(scale=freq_scale)))
+            exp_backend_flags.extend([backend] * n_sub)
+
+        return exp_toas, exp_freqs, exp_backend_flags
 
     def init_noisedict(self, custom_noisedict=None):
+        noisedict = {}
 
         if custom_noisedict is None:
-            custom_noisedict = {}
-            noisedict = {}
             for backend in self.backends:
-                noisedict[self.name+'_'+backend+'_efac'] = 1.
-                noisedict[self.name+'_'+backend+'_log10_tnequad'] = -8.
-                noisedict[self.name+'_'+backend+'_log10_t2equad'] = -8.
-                noisedict[self.name+'_'+backend+'_log10_ecorr'] = -8.
-            self.noisedict = noisedict
-        elif np.any([self.name in key for key in [*custom_noisedict]]):
-            keys = [*custom_noisedict]
-            noisedict = {}
-            for key in keys:
+                noisedict[self.name+'_'+backend+'_efac']           = 1.
+                noisedict[self.name+'_'+backend+'_log10_tnequad']  = -8.
+                noisedict[self.name+'_'+backend+'_log10_t2equad']  = -8.
+                noisedict[self.name+'_'+backend+'_log10_ecorr']    = -8.
+            custom_noisedict={}
+
+        elif np.any([self.name in key for key in custom_noisedict]):
+            # fully qualified keys already present (e.g. from a real noisedict file)
+            for key, val in custom_noisedict.items():
                 if self.name in key:
-                    noisedict[key] = custom_noisedict[key]
-            self.noisedict = noisedict
-        elif np.all([backend+'_efac' in [*custom_noisedict] for backend in self.backends]):
-            noisedict = {}
+                    noisedict[key] = val
+
+        elif np.all([backend+'_efac' in custom_noisedict.keys() for backend in self.backends]):
+            # per-backend keys without pulsar name prefix
             for backend in self.backends:
-                noisedict[self.name+'_'+backend+'_efac'] = custom_noisedict[backend+'_efac']
+                noisedict[self.name+'_'+backend+'_efac']          = custom_noisedict[backend+'_efac']
                 noisedict[self.name+'_'+backend+'_log10_tnequad'] = custom_noisedict[backend+'_log10_tnequad']
-                try:
-                    noisedict[self.name+'_'+backend+'_log10_t2equad'] = custom_noisedict[backend+'_log10_t2equad']
-                except:
-                    continue
-                try:
-                    noisedict[self.name+'_'+backend+'_log10_ecorr'] = custom_noisedict[backend+'_log10_ecorr']
-                except:
-                    continue
-            self.noisedict = noisedict
+                for opt in ['log10_t2equad', 'log10_ecorr']:
+                    key = backend+'_'+opt
+                    if key in custom_noisedict.keys():
+                        noisedict[self.name+'_'+backend+'_'+opt] = custom_noisedict[key]
+
         else:
-            noisedict = {}
+            # scalar fallback: same value for all backends
             for backend in self.backends:
-                noisedict[self.name+'_'+backend+'_efac'] = custom_noisedict['efac']
-                noisedict[self.name+'_'+backend+'_log10_tnequad'] = custom_noisedict['log10_tnequad']
+                noisedict[self.name+'_'+backend+'_efac']          = custom_noisedict.get('efac', 1.)
+                noisedict[self.name+'_'+backend+'_log10_tnequad'] = custom_noisedict.get('log10_tnequad', -8.)
+                for opt in ['log10_t2equad', 'log10_ecorr']:
+                    if opt in custom_noisedict.keys():
+                        noisedict[self.name+'_'+backend+'_'+opt] = custom_noisedict[opt]
+
+        # GP noise — unchanged logic
+        for gp in ['red_noise', 'dm_gp', 'chrom_gp']:
+            if np.any([gp in key for key in custom_noisedict.keys() or []]):
                 try:
-                    noisedict[self.name+'_'+backend+'_log10_t2equad'] = custom_noisedict['log10_t2equad']
+                    key_amp = self.name+'_'+gp+'_log10_A' if self.name+'_'+gp+'_log10_A' in custom_noisedict.keys() else gp+'_log10_A'
+                    key_gam = self.name+'_'+gp+'_gamma'   if self.name+'_'+gp+'_gamma'   in custom_noisedict.keys() else gp+'_gamma'
+                    noisedict[self.name+'_'+gp+'_log10_A'] = custom_noisedict[key_amp]
+                    noisedict[self.name+'_'+gp+'_gamma']   = custom_noisedict[key_gam]
                 except:
-                    continue
-                try:
-                    noisedict[self.name+'_'+backend+'_log10_ecorr'] = custom_noisedict['log10_ecorr']
-                except:
-                    continue
-            self.noisedict = noisedict
-        if np.any(['red_noise' in key for key in [*custom_noisedict]]):
-            try:
-                key_amp = self.name+'_red_noise_log10_A' if self.name+'_red_noise_log10_A' in [*custom_noisedict] else 'red_noise_log10_A'
-                key_gam = self.name+'_red_noise_gamma' if self.name+'_red_noise_gamma' in [*custom_noisedict] else 'red_noise_gamma'
-                noisedict[self.name+'_red_noise_log10_A'] = custom_noisedict[key_amp]
-                noisedict[self.name+'_red_noise_gamma'] = custom_noisedict[key_gam]
-            except:
-                pass
-        if np.any(['dm_gp' in key for key in [*custom_noisedict]]):
-            try:
-                key_amp = self.name+'_dm_gp_log10_A' if self.name+'_dm_gp_log10_A' in [*custom_noisedict] else 'dm_gp_log10_A'
-                key_gam = self.name+'_dm_gp_gamma' if self.name+'_dm_gp_gamma' in [*custom_noisedict] else 'dm_gp_gamma'
-                noisedict[self.name+'_dm_gp_log10_A'] = custom_noisedict[key_amp]
-                noisedict[self.name+'_dm_gp_gamma'] = custom_noisedict[key_gam]
-            except:
-                pass
-        if np.any(['chrom_gp' in key for key in [*custom_noisedict]]):
-            try:
-                key_amp = self.name+'_chrom_gp_log10_A' if self.name+'_chrom_gp_log10_A' in [*custom_noisedict] else 'chrom_gp_log10_A'
-                key_gam = self.name+'_chrom_gp_gamma' if self.name+'_chrom_gp_gamma' in [*custom_noisedict] else 'chrom_gp_gamma'
-                noisedict[self.name+'_chrom_gp_log10_A'] = custom_noisedict[key_amp]
-                noisedict[self.name+'_chrom_gp_gamma'] = custom_noisedict[key_gam]
-            except:
-                pass
-        
+                    pass
+
         self.noisedict = noisedict
 
     def init_tm_pars(self, timing_model):
@@ -205,60 +204,72 @@ class Pulsar:
     def add_white_noise(self, add_ecorr=False, randomize=False):
 
         if randomize:
-            for key in [*self.noisedict]:
-                if 'efac' in key:
-                    self.noisedict[key] = np.random.uniform(0.5, 2.5)
-                if 'equad' in key:
-                    self.noisedict[key] = np.random.uniform(-8., -5.)
-                if add_ecorr and 'ecorr' in key:
-                    self.noisedict[key] = np.random.uniform(-10., -7.)
-        if self.backends is None:
-            toaerrs2 = self.noisedict[self.name+'_efac']**2 * self.toaerrs**2 + 10**(2*self.noisedict[self.name+'_log10_tnequad'])
-        else:
-            toaerrs2 = np.zeros(len(self.toaerrs))
-            for backend in self.backends:
-                mask_backend = self.backend_flags == backend
-                toaerrs2[mask_backend] = self.noisedict[self.name+'_'+backend+'_efac']**2 * self.toaerrs[mask_backend]**2 + 10**(2*self.noisedict[self.name+'_'+backend+'_log10_tnequad'])
-        
+            for key in list(self.noisedict):
+                if 'efac'   in key: self.noisedict[key] = np.random.uniform(0.5, 2.5)
+                if 'equad'  in key: self.noisedict[key] = np.random.uniform(-8., -5.)
+                if 'ecorr'  in key: self.noisedict[key] = np.random.uniform(-10., -7.)
+
+        # EFAC + EQUAD: per backend, applied to all its sub-band TOAs
+        toaerrs2 = np.zeros(len(self.toaerrs))
+        for backend in self.backends:
+            mask = self.backend_flags == backend
+            efac   = self.noisedict[self.name+'_'+backend+'_efac']
+            log10_tnequad = self.noisedict[self.name+'_'+backend+'_log10_tnequad']
+            toaerrs2[mask] = efac**2 * self.toaerrs[mask]**2 + 10**(2*log10_tnequad)
+        self.residuals += np.random.normal(scale=np.sqrt(toaerrs2))
+
+        # ECORR: one multivariate draw per epoch per backend group
         if add_ecorr:
-            for backend in self.backends:
-                quant_idx = self.quantise_ecorr(backends=[backend])
-                for q_i in quant_idx:
-                    if len(q_i) < 2:
-                        self.residuals[q_i] += np.random.normal(scale=toaerrs2[q_i]**0.5)
-                    else:
-                        white_block = np.ones((len(q_i), len(q_i))) * 10**(2*self.noisedict[self.name+'_'+backend+'_log10_ecorr'])
-                        white_block = np.fill_diagonal(white_block, np.diag(white_block) + toaerrs2[q_i])
-                        self.residuals[q_i] += np.random.multivariate_normal(mean=np.zeros(len(q_i)), 
-                                                                             cov=white_block)
-        else:
-            self.residuals += np.random.normal(scale=toaerrs2**0.5)
+            groups = self.quantise_ecorr()
+            for backend, epoch_list in groups:
+                if backend in self.ecorr_backends:
+                    ecorr_key = self.name+'_'+backend+'_log10_ecorr'
+                    sigma_j = 10**self.noisedict[ecorr_key]
+                    for epoch_idx in epoch_list:
+                        n = len(epoch_idx)
+                        if n < 2:
+                            self.residuals[epoch_idx] += np.random.normal(scale=sigma_j)
+                            continue
+                        cov = sigma_j**2 * np.ones((n, n))
+                        self.residuals[epoch_idx] += np.random.multivariate_normal(
+                            mean=np.zeros(n), cov=cov
+                        )
 
-    def quantise_ecorr(self, dt=.5, backends=None):
+    def quantise_ecorr(self, dt=0.5):
+        """
+        For each backend (group), collect epoch buckets containing all its
+        sub-band TOAs. Returns list of (backend_name, [epoch_index_arrays]).
+        """
+        dt_sec = dt * 24 * 3600
+        times = self.toas
+        result = []
 
-        if backends is None:
-            backends = self.backends
+        for backend in self.backends:
+            group_mask = self.backend_flags == backend
+            group_idx = np.where(group_mask)[0]
+            if len(group_idx) == 0:
+                continue
 
-        times = self.toas - self.toas[0]
-        quantised_idx = []
-        dt *= 24 * 3600
-        for backend in backends:
-            backend_mask = self.backend_flags == backend
-            b_idx = np.arange(len(times))[backend_mask]
-            t0 = times[b_idx[0]]
-            q_i = [b_idx[0]]
-            for n in b_idx[1:]:
-                if times[n] - t0 < dt:
-                    q_i.append(n)
+            sort_order = np.argsort(times[group_idx])
+            sorted_idx = group_idx[sort_order]
+            sorted_times = times[sorted_idx]
+
+            epoch_groups = []
+            t0 = sorted_times[0]
+            current_epoch = [sorted_idx[0]]
+
+            for k in range(1, len(sorted_idx)):
+                if sorted_times[k] - t0 < dt_sec:
+                    current_epoch.append(sorted_idx[k])
                 else:
-                    t0 = times[n]
-                    quantised_idx.append(np.array(q_i))
-                    q_i = [n]
-        
-        return quantised_idx
+                    epoch_groups.append(np.array(current_epoch))
+                    t0 = sorted_times[k]
+                    current_epoch = [sorted_idx[k]]
+            epoch_groups.append(np.array(current_epoch))
 
-        
-        # self.residuals[mask] += 10**(2*self.noisedict[self.name+'_'+backend+'_ecorr']) * np.random.normal()
+            result.append((backend, epoch_groups))
+
+        return result
 
     def add_red_noise(self, spectrum='powerlaw', f_psd=None, **kwargs):
 
@@ -572,13 +583,12 @@ class Pulsar:
                     self.noisedict.pop(key)
 
 
-def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, 
-                    pdist=None, freqs=[1400], isotropic=False, backends=None, 
-                    noisedict=None, custom_model=None, ephem=None,
-                    f_psd=None):
+def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
+                    pdist=None, isotropic=False, backend_config=None,
+                    noisedict=None, custom_model=None, ephem=None, f_psd=None,
+                    add_ecorr=False):
 
     if isotropic:
-        # Fibonacci sequence on sphere
         i = np.arange(0, npsrs, dtype=float) + 0.5
         golden_ratio = (1 + 5**0.5)/2
         costhetas = 1 - 2*i/npsrs
@@ -590,27 +600,24 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
     # Observation time for each pulsar
     if Tobs is None:
         Tobs = np.random.uniform(10, 20, size=npsrs)
-    elif isinstance(Tobs, float) or isinstance(Tobs, int):
+    elif isinstance(Tobs, (float, int)):
         Tobs = Tobs * np.ones(npsrs)
 
     # Number of TOAs for each pulsar
-    yr = 365.25*24*3600
+    yr = 365.25 * 24 * 3600
     if ntoas is None:
-        cadence = 7 * 24*3600 # days
-        # draw F0 and correct cadence wrt F0
+        cadence = 7 * 24 * 3600
         F0 = np.random.uniform(200, 300, size=npsrs)
-        d_cadence = (F0 * cadence - np.floor(F0 * cadence )) / F0
+        d_cadence = (F0 * cadence - np.floor(F0 * cadence)) / F0
         cadence = cadence - d_cadence
         ntoas = np.int32(Tobs * 365.25 * 24 * 3600 / cadence)
-    elif isinstance(ntoas, float) or isinstance(ntoas, int):
+    elif isinstance(ntoas, (float, int)):
         F0 = 200 * np.ones(npsrs)
         ntoas = np.int32(ntoas * np.ones(npsrs))
         cadence = Tobs * yr / (ntoas - 1)
 
-    # Init TOAs from latest observation time
+    # Make unevenly sampled TOAs
     Tmax = np.amax(Tobs)
-
-    # Make unevenly sampled TOAs if gaps is True
     if gaps:
         gap_odds = [True, True, True, False] # one out of five
         keep = [np.random.choice(gap_odds, size=ntoa) for ntoa in ntoas]
@@ -618,61 +625,87 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
         toas = [toas[i][keep[i]] for i in range(npsrs)]
     else:
         toas = [(Tmax - Tobs[i])*yr + np.arange(1, ntoas[i]+1)*cadence[i] for i in range(npsrs)]
+
     if toaerr is None:
         toaerr = np.power(10, np.random.uniform(-7., -5., size=npsrs))
     elif isinstance(toaerr, float):
         toaerr = toaerr * np.ones(npsrs)
 
-    # Init pulsar distances
+    # Pulsar distances
     if pdist is None:
         dists = np.random.uniform(0.5, 1.5, size=npsrs)
         pdist = [[dist, 0.2*dist] for dist in dists]
     elif isinstance(pdist, float):
         pdist = [[pdist, 0.2*pdist]] * npsrs
 
-    # Init backends
-    if backends is None:
-        backends = []
-        for _ in range(npsrs):
-            n_backends = np.random.randint(1, 3)
-            backends.append(['backend_'+str(k) for k in range(n_backends)])
-    elif isinstance(backends, str):
-        backends = [[backends]] * npsrs
-    elif isinstance(backends, list):
-        if not isinstance(backends[0], list):
-            backends = [backends] * npsrs
-    
-    # Init noise properties
+    # backend_config: one dict per pulsar, or a single dict applied to all,
+    # or None for a simple default single-band backend
+    if backend_config is None:
+        # default: one backend, one frequency, no sub-bands
+        backend_config = [{'backend': [1400]}] * npsrs
+    elif isinstance(backend_config, dict):
+        # same config for all pulsars
+        backend_config = [backend_config] * npsrs
+    elif isinstance(backend_config, list):
+        # one config per pulsar — use as-is
+        assert len(backend_config) == npsrs, \
+            '"backend_config" list must have length "npsrs"'
 
+    # Sanity checks
+    assert len(Tobs)   == npsrs, '"Tobs" must be same size as "npsrs"'
+    assert len(ntoas)  == npsrs, '"ntoas" must be same size as "npsrs"'
+    assert len(toaerr) == npsrs, '"toaerr" must be same size as "npsrs"'
+    assert len(pdist)  == npsrs, '"pdist" must be same size as "npsrs"'
 
-    assert (len(Tobs) == npsrs), '"Tobs" must be same size as "npsrs"'
-    assert (len(ntoas) == npsrs), '"ntoas" must be same size as "npsrs"'
-    assert (len(toaerr) == npsrs), '"toaerr" must be same size as "npsrs"'
-    assert (len(pdist) == npsrs), '"pdist" must be same size as "npsrs"'
-    assert (len(backends) == npsrs), '"backends" must be same size as "npsrs"'
-
-    # Create pulsars and add noises
+    # Create pulsars
     psrs = []
     for i in range(npsrs):
-        if custom_model is None:
-            custom_model = None
-        psr = Pulsar(toas[i], toaerr[i], np.arccos(costhetas[i]), phis[i], pdist[i], freqs=freqs, backends=backends[i], custom_noisedict=noisedict, custom_model=custom_model, tm_params={'F0':(F0[i], np.random.uniform(1e-13, 1e-12))}, ephem=ephem)
-        logging.info('Creating psr', psr.name)
-        psr.add_white_noise()
+        psr = Pulsar(
+            toas[i], toaerr[i],
+            np.arccos(costhetas[i]), phis[i],
+            pdist[i],
+            backend_config=backend_config[i],
+            custom_noisedict=noisedict,
+            custom_model=custom_model,
+            tm_params={'F0': (F0[i], np.random.uniform(1e-13, 1e-12))},
+            ephem=ephem,
+        )
+        logging.info('Creating psr %s', psr.name)
+        psr.add_white_noise(add_ecorr=add_ecorr)
+
         try:
-            psr.add_red_noise(spectrum='powerlaw', log10_A=psr.noisedict[psr.name+'_red_noise_log10_A'], gamma=psr.noisedict[psr.name+'_red_noise_gamma'], f_psd=f_psd)
+            psr.add_red_noise(spectrum='powerlaw',
+                              log10_A=psr.noisedict[psr.name+'_red_noise_log10_A'],
+                              gamma=psr.noisedict[psr.name+'_red_noise_gamma'],
+                              f_psd=f_psd)
         except:
-            psr.add_red_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5), f_psd=f_psd)
-        
+            psr.add_red_noise(spectrum='powerlaw',
+                              log10_A=np.random.uniform(-17., -13),
+                              gamma=np.random.uniform(1, 5),
+                              f_psd=f_psd)
+
         try:
-            psr.add_dm_noise(spectrum='powerlaw', log10_A=psr.noisedict[psr.name+'_dm_gp_log10_A'], gamma=psr.noisedict[psr.name+'_dm_gp_gamma'], f_psd=f_psd)
+            psr.add_dm_noise(spectrum='powerlaw',
+                             log10_A=psr.noisedict[psr.name+'_dm_gp_log10_A'],
+                             gamma=psr.noisedict[psr.name+'_dm_gp_gamma'],
+                             f_psd=f_psd)
         except:
-            psr.add_dm_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5), f_psd=f_psd)
-        
+            psr.add_dm_noise(spectrum='powerlaw',
+                             log10_A=np.random.uniform(-17., -13),
+                             gamma=np.random.uniform(1, 5),
+                             f_psd=f_psd)
+
         try:
-            psr.add_chromatic_noise(spectrum='powerlaw', log10_A=psr.noisedict[psr.name+'_chrom_gp_log10_A'], gamma=psr.noisedict[psr.name+'_chrom_gp_gamma'], f_psd=f_psd)
+            psr.add_chromatic_noise(spectrum='powerlaw',
+                                    log10_A=psr.noisedict[psr.name+'_chrom_gp_log10_A'],
+                                    gamma=psr.noisedict[psr.name+'_chrom_gp_gamma'],
+                                    f_psd=f_psd)
         except:
-            psr.add_chromatic_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5), f_psd=f_psd)
+            psr.add_chromatic_noise(spectrum='powerlaw',
+                                    log10_A=np.random.uniform(-17., -13),
+                                    gamma=np.random.uniform(1, 5),
+                                    f_psd=f_psd)
+
         psrs.append(psr)
 
     return psrs

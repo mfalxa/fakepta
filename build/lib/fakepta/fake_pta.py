@@ -202,62 +202,133 @@ class Pulsar:
                 if signal in key:
                     self.noisedict.pop(key)
 
-    def add_white_noise(self, add_ecorr=False, randomize=False):
-
+    def add_white_noise(self, add_ecorr=False, ecorr_groups=None, randomize=False):
+        """
+        Parameters
+        ----------
+        ecorr_groups : dict or None
+            Same convention as quantise_ecorr. Maps group name -> list of
+            backend flag strings that share one ECORR parameter.
+            E.g. {'NUPPI': ['NUPPI.900', 'NUPPI.1400', 'NUPPI.2200']}
+        """
         if randomize:
-            for key in [*self.noisedict]:
+            for key in list(self.noisedict):
                 if 'efac' in key:
                     self.noisedict[key] = np.random.uniform(0.5, 2.5)
                 if 'equad' in key:
                     self.noisedict[key] = np.random.uniform(-8., -5.)
                 if add_ecorr and 'ecorr' in key:
                     self.noisedict[key] = np.random.uniform(-10., -7.)
-        if self.backends is None:
-            toaerrs2 = self.noisedict[self.name+'_efac']**2 * self.toaerrs**2 + 10**(2*self.noisedict[self.name+'_log10_tnequad'])
-        else:
-            toaerrs2 = np.zeros(len(self.toaerrs))
-            for backend in self.backends:
-                mask_backend = self.backend_flags == backend
-                toaerrs2[mask_backend] = self.noisedict[self.name+'_'+backend+'_efac']**2 * self.toaerrs[mask_backend]**2 + 10**(2*self.noisedict[self.name+'_'+backend+'_log10_tnequad'])
-        
+
+        # --- White noise (EFAC + EQUAD), per backend ---
+        toaerrs2 = np.zeros(len(self.toaerrs))
+        for backend in self.backends:
+            mask = self.backend_flags == backend
+            efac = self.noisedict[self.name + '_' + backend + '_efac']
+            log10_tnequad = self.noisedict[self.name + '_' + backend + '_log10_tnequad']
+            toaerrs2[mask] = efac**2 * self.toaerrs[mask]**2 + 10**(2 * log10_tnequad)
+
+        self.residuals += np.random.normal(scale=np.sqrt(toaerrs2))
+
+        # --- ECORR: one draw per epoch, shared across all backends in the group ---
         if add_ecorr:
-            for backend in self.backends:
-                quant_idx = self.quantise_ecorr(backends=[backend])
-                for q_i in quant_idx:
-                    if len(q_i) < 2:
-                        self.residuals[q_i] += np.random.normal(scale=toaerrs2[q_i]**0.5)
-                    else:
-                        white_block = np.ones((len(q_i), len(q_i))) * 10**(2*self.noisedict[self.name+'_'+backend+'_log10_ecorr'])
-                        white_block = np.fill_diagonal(white_block, np.diag(white_block) + toaerrs2[q_i])
-                        self.residuals[q_i] += np.random.multivariate_normal(mean=np.zeros(len(q_i)), 
-                                                                             cov=white_block)
-        else:
-            self.residuals += np.random.normal(scale=toaerrs2**0.5)
+            groups = self.quantise_ecorr(ecorr_groups=ecorr_groups)
+            for group_name, epoch_list in groups:
+                ecorr_key = self.name + '_' + group_name + '_log10_ecorr'
+                sigma_ecorr = 10**self.noisedict[ecorr_key]
 
-    def quantise_ecorr(self, dt=.5, backends=None):
+                for epoch_idx in epoch_list:
+                    n = len(epoch_idx)
+                    if n == 0:
+                        continue
+                    # Covariance: sigma_J^2 * 1 1^T
+                    cov = sigma_ecorr**2 * np.ones((n, n))
+                    self.residuals[epoch_idx] += np.random.multivariate_normal(
+                        mean=np.zeros(n), cov=cov
+                    )
 
-        if backends is None:
-            backends = self.backends
+    def quantise_ecorr(self, dt=0.5, ecorr_groups=None):
+        """
+        Build epoch quantisation groups for ECORR.
 
-        times = self.toas - self.toas[0]
-        quantised_idx = []
-        dt *= 24 * 3600
-        for backend in backends:
-            backend_mask = self.backend_flags == backend
-            b_idx = np.arange(len(times))[backend_mask]
-            t0 = times[b_idx[0]]
-            q_i = [b_idx[0]]
-            for n in b_idx[1:]:
-                if times[n] - t0 < dt:
-                    q_i.append(n)
+        Parameters
+        ----------
+        dt : float
+            Coarse-graining window in days. TOAs within `dt` days of each
+            other are considered simultaneous (same epoch).
+        ecorr_groups : dict or None
+            Maps an ECORR group name to a list of backend flags that share
+            the same jitter draw. E.g.:
+                {'NUPPI': ['NUPPI.900', 'NUPPI.1400', 'NUPPI.2200']}
+            If None, all backends are placed in a single group.
+
+        Returns
+        -------
+        list of (group_name, list of index arrays)
+            Each entry is (group_name, [array_of_toa_indices_per_epoch]).
+        """
+        if ecorr_groups is None:
+            ecorr_groups = {'all': list(self.backends)}
+
+        dt_sec = dt * 24 * 3600
+        times = self.toas
+
+        result = []  # list of (group_name, [epoch_index_arrays])
+
+        for group_name, group_backends in ecorr_groups.items():
+            # Mask selecting all TOAs belonging to any backend in this group
+            group_mask = np.zeros(len(times), dtype=bool)
+            for backend in group_backends:
+                group_mask |= (self.backend_flags == backend)
+
+            group_idx = np.where(group_mask)[0]
+            if len(group_idx) == 0:
+                continue
+
+            # Sort by time within the group
+            sort_order = np.argsort(times[group_idx])
+            sorted_idx = group_idx[sort_order]
+            sorted_times = times[sorted_idx]
+
+            # Greedily bin into epochs: all TOAs within dt_sec of the
+            # first TOA in the current bin go into the same epoch
+            epoch_groups = []
+            t0 = sorted_times[0]
+            current_epoch = [sorted_idx[0]]
+
+            for k in range(1, len(sorted_idx)):
+                if sorted_times[k] - t0 < dt_sec:
+                    current_epoch.append(sorted_idx[k])
                 else:
-                    t0 = times[n]
-                    quantised_idx.append(np.array(q_i))
-                    q_i = [n]
-        
-        return quantised_idx
+                    epoch_groups.append(np.array(current_epoch))
+                    t0 = sorted_times[k]
+                    current_epoch = [sorted_idx[k]]
 
-        
+            epoch_groups.append(np.array(current_epoch))  # last epoch
+            result.append((group_name, epoch_groups))
+
+        return result
+
+    # def quantise_ecorr(self, dt=.5, backends=None):
+    #     if backends is None:
+    #         backends = self.backends
+    #     times = self.toas - self.toas[0]
+    #     quantised_idx = []
+    #     dt *= 24 * 3600
+    #     for backend in backends:
+    #         backend_mask = self.backend_flags == backend
+    #         b_idx = np.arange(len(times))[backend_mask]
+    #         t0 = times[b_idx[0]]
+    #         q_i = [b_idx[0]]
+    #         for n in b_idx[1:]:
+    #             if times[n] - t0 < dt:
+    #                 q_i.append(n)
+    #             else:
+    #                 t0 = times[n]
+    #                 quantised_idx.append(np.array(q_i))
+    #                 q_i = [n]
+    #     return quantised_idx
+
     def add_red_noise(self, spectrum='powerlaw', f_psd=None, **kwargs):
 
         rn_components = self.custom_model['RN']
