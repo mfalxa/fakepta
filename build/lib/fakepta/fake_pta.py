@@ -1,14 +1,19 @@
-import numpy as np
+import importlib
+import inspect
+import json
+import logging
+import pickle
+
 import matplotlib.pyplot as plt
-import pickle, json
-from scipy.optimize import fsolve
-from enterprise_extensions import deterministic as det
+import numpy as np
 import scipy.constants as sc
-import importlib, inspect
+from enterprise_extensions import deterministic as det
+from scipy.optimize import fsolve
+
 try:
     import healpy as hp
 except:
-    print('healpy module not found.')
+    logging.warning('healpy module not found.')
 
 # load spectrum functions from "spectrum.py"
 module = importlib.import_module('fakepta.spectrum')
@@ -114,7 +119,7 @@ class Pulsar:
                 except:
                     continue
                 try:
-                    noisedict[self.name+'_'+backend+'_log10_ecorr'] = custom_noisedict[backend+'_log10_ecorr']
+                    noisedict[self.name+'_'+backend+'_log10_ecorr'] = custom_noisedict['log10_ecorr']
                 except:
                     continue
             self.noisedict = noisedict
@@ -142,6 +147,8 @@ class Pulsar:
                 noisedict[self.name+'_chrom_gp_gamma'] = custom_noisedict[key_gam]
             except:
                 pass
+        
+        self.noisedict = noisedict
 
     def init_tm_pars(self, timing_model):
 
@@ -220,13 +227,14 @@ class Pulsar:
                     if len(q_i) < 2:
                         self.residuals[q_i] += np.random.normal(scale=toaerrs2[q_i]**0.5)
                     else:
-                        white_block = np.ones((len(q_i), len(q_i))) * 10**self.noisedict[self.name+'_'+backend+'_log10_ecorr']
+                        white_block = np.ones((len(q_i), len(q_i))) * 10**(2*self.noisedict[self.name+'_'+backend+'_log10_ecorr'])
                         white_block = np.fill_diagonal(white_block, np.diag(white_block) + toaerrs2[q_i])
-                        self.residuals[q_i] += np.random.multivariate_normal(mean=np.zeros(len(q_i)), cov=white_block)
+                        self.residuals[q_i] += np.random.multivariate_normal(mean=np.zeros(len(q_i)), 
+                                                                             cov=white_block)
         else:
             self.residuals += np.random.normal(scale=toaerrs2**0.5)
 
-    def quantise_ecorr(self, dt=1, backends=None):
+    def quantise_ecorr(self, dt=.5, backends=None):
 
         if backends is None:
             backends = self.backends
@@ -250,8 +258,6 @@ class Pulsar:
         return quantised_idx
 
         
-        # self.residuals[mask] += 10**(2*self.noisedict[self.name+'_'+backend+'_ecorr']) * np.random.normal()
-
     def add_red_noise(self, spectrum='powerlaw', f_psd=None, **kwargs):
 
         rn_components = self.custom_model['RN']
@@ -263,14 +269,14 @@ class Pulsar:
             if 'red_noise' in self.signal_model:
                 self.residuals -= self.reconstruct_signal(['red_noise'])
 
-            if spectrum is 'custom':
+            if spectrum == 'custom':
                 psd = kwargs['custom_psd']
             elif spectrum in [*spec]:
                 if len(kwargs) == 0:
                     try:
                         kwargs = {pname : self.noisedict[self.name+'_red_noise_'+pname] for pname in spec_params[spectrum]}
                     except:
-                        print('PSD parameters must be in noisedict or parsed as input.')
+                        logging.error('PSD parameters must be in noisedict or parsed as input.')
                         return
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_red_noise', kwargs)
@@ -288,14 +294,14 @@ class Pulsar:
             if 'dm_gp' in self.signal_model:
                 self.residuals -= self.reconstruct_signal(['dm_gp'])
 
-            if spectrum is 'custom':
+            if spectrum == 'custom':
                 psd = kwargs['custom_psd']
             elif spectrum in [*spec]:
                 if len(kwargs) == 0:
                     try:
                         kwargs = {pname : self.noisedict[self.name+'_dm_gp_'+pname] for pname in spec_params[spectrum]}
                     except:
-                        print('PSD parameters must be in noisedict or parsed as input.')
+                        logging.error('PSD parameters must be in noisedict or parsed as input.')
                         return
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_dm_gp', kwargs)
@@ -313,14 +319,14 @@ class Pulsar:
             if 'chrom_gp' in self.signal_model:
                 self.residuals -= self.reconstruct_signal(['chrom_gp'])
 
-            if spectrum is 'custom':
+            if spectrum == 'custom':
                 psd = kwargs['custom_psd']
             elif spectrum in [*spec]:
                 if len(kwargs) == 0:
                     try:
                         kwargs = {pname : self.noisedict[self.name+'_chrom_gp_'+pname] for pname in spec_params[spectrum]}
                     except:
-                        print('PSD parameters must be in noisedict or parsed as input.')
+                        logging.error('PSD parameters must be in noisedict or parsed as input.')
                         return
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_chrom_gp', kwargs)
@@ -337,14 +343,14 @@ class Pulsar:
         if 'system_noise_'+str(backend) in self.signal_model:
             self.residuals -= self.reconstruct_signal(['system_noise_'+str(backend)])
 
-        if spectrum is 'custom':
+        if spectrum == 'custom':
             psd = kwargs['custom_psd']
         elif spectrum in [*spec]:
             if len(kwargs) == 0:
                 try:
                     kwargs = {pname : self.noisedict[self.name+'_system_noise_'+str(backend)+'_'+pname] for pname in spec_params[spectrum]}
                 except:
-                    print('PSD parameters must be in noisedict or parsed as input.')
+                    logging.error('PSD parameters must be in noisedict or parsed as input.')
                     return
             psd = spec[spectrum](f_psd, kwargs)
             self.update_noisedict(self.name+'_system_noise_'+str(backend), kwargs)
@@ -359,7 +365,7 @@ class Pulsar:
             signal = backend + '_' + signal
             mask = self.backend_flags == backend
             if not np.any(mask):
-                print(backend, 'not found in backend_flags.')
+                logging.error(backend, 'not found in backend_flags.')
                 return
         else:
             mask = np.ones(len(self.toas), dtype='bool')
@@ -396,7 +402,7 @@ class Pulsar:
             signal = backend + '_' + signal
             mask = self.backend_flags == backend
             if not np.any(mask):
-                print(backend, 'not found in backend_flags.')
+                logging.error(backend, 'not found in backend_flags.')
                 return
         else:
             mask = np.ones(len(self.toas), dtype='bool')
@@ -564,7 +570,10 @@ class Pulsar:
                     self.noisedict.pop(key)
 
 
-def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdist=None, freqs=[1400], isotropic=False, backends=None, noisedict=None, custom_model=None, ephem=None):
+def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, 
+                    pdist=None, freqs=[1400], isotropic=False, backends=None, 
+                    noisedict=None, custom_model=None, ephem=None,
+                    f_psd=None):
 
     if isotropic:
         # Fibonacci sequence on sphere
@@ -594,7 +603,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
     elif isinstance(ntoas, float) or isinstance(ntoas, int):
         F0 = 200 * np.ones(npsrs)
         ntoas = np.int32(ntoas * np.ones(npsrs))
-        cadence = Tobs * yr / ntoas
+        cadence = Tobs * yr / (ntoas - 1)
 
     # Init TOAs from latest observation time
     Tmax = np.amax(Tobs)
@@ -630,6 +639,9 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
     elif isinstance(backends, list):
         if not isinstance(backends[0], list):
             backends = [backends] * npsrs
+    
+    # Init noise properties
+
 
     assert (len(Tobs) == npsrs), '"Tobs" must be same size as "npsrs"'
     assert (len(ntoas) == npsrs), '"ntoas" must be same size as "npsrs"'
@@ -643,11 +655,22 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None, pdi
         if custom_model is None:
             custom_model = None
         psr = Pulsar(toas[i], toaerr[i], np.arccos(costhetas[i]), phis[i], pdist[i], freqs=freqs, backends=backends[i], custom_noisedict=noisedict, custom_model=custom_model, tm_params={'F0':(F0[i], np.random.uniform(1e-13, 1e-12))}, ephem=ephem)
-        print('Creating psr', psr.name)
+        logging.info('Creating psr', psr.name)
         psr.add_white_noise()
-        psr.add_red_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5))
-        psr.add_dm_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5))
-        psr.add_chromatic_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5))
+        try:
+            psr.add_red_noise(spectrum='powerlaw', log10_A=psr.noisedict[psr.name+'_red_noise_log10_A'], gamma=psr.noisedict[psr.name+'_red_noise_gamma'], f_psd=f_psd)
+        except:
+            psr.add_red_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5), f_psd=f_psd)
+        
+        try:
+            psr.add_dm_noise(spectrum='powerlaw', log10_A=psr.noisedict[psr.name+'_dm_gp_log10_A'], gamma=psr.noisedict[psr.name+'_dm_gp_gamma'], f_psd=f_psd)
+        except:
+            psr.add_dm_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5), f_psd=f_psd)
+        
+        try:
+            psr.add_chromatic_noise(spectrum='powerlaw', log10_A=psr.noisedict[psr.name+'_chrom_gp_log10_A'], gamma=psr.noisedict[psr.name+'_chrom_gp_gamma'], f_psd=f_psd)
+        except:
+            psr.add_chromatic_noise(spectrum='powerlaw', log10_A=np.random.uniform(-17., -13), gamma=np.random.uniform(1, 5), f_psd=f_psd)
         psrs.append(psr)
 
     return psrs

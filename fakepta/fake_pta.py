@@ -119,7 +119,7 @@ class Pulsar:
                 except:
                     continue
                 try:
-                    noisedict[self.name+'_'+backend+'_log10_ecorr'] = custom_noisedict[backend+'_log10_ecorr']
+                    noisedict[self.name+'_'+backend+'_log10_ecorr'] = custom_noisedict['log10_ecorr']
                 except:
                     continue
             self.noisedict = noisedict
@@ -227,13 +227,14 @@ class Pulsar:
                     if len(q_i) < 2:
                         self.residuals[q_i] += np.random.normal(scale=toaerrs2[q_i]**0.5)
                     else:
-                        white_block = np.ones((len(q_i), len(q_i))) * 10**self.noisedict[self.name+'_'+backend+'_log10_ecorr']
+                        white_block = np.ones((len(q_i), len(q_i))) * 10**(2*self.noisedict[self.name+'_'+backend+'_log10_ecorr'])
                         white_block = np.fill_diagonal(white_block, np.diag(white_block) + toaerrs2[q_i])
-                        self.residuals[q_i] += np.random.multivariate_normal(mean=np.zeros(len(q_i)), cov=white_block)
+                        self.residuals[q_i] += np.random.multivariate_normal(mean=np.zeros(len(q_i)), 
+                                                                             cov=white_block)
         else:
             self.residuals += np.random.normal(scale=toaerrs2**0.5)
 
-    def quantise_ecorr(self, dt=1, backends=None):
+    def quantise_ecorr(self, dt=.5, backends=None):
 
         if backends is None:
             backends = self.backends

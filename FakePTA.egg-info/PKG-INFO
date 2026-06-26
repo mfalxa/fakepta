@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: FakePTA
+Version: 0.1
+Summary: Tool for pulsar timing array simulation
+Home-page: https://github.com/mfalxa/fakepta/
+Author: Mikel Falxa
+Author-email: 
+Dynamic: author
+Dynamic: home-page
+Dynamic: summary
