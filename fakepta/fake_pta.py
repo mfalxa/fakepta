@@ -25,6 +25,13 @@ for s_name, s_obj in spec:
     spec_params[s_name] = pnames
 spec = dict(spec)
 
+default_backend_config = {
+    'NUPPI': {
+            'sub_bands': [1400], # Sub-bands used by this backend
+            'p': 1 # Proportion of observations from this backend 
+            }
+}
+
 class Pulsar:
 
     def __init__(self, toas, toaerr, theta, phi, pdist=(1., 0.2),
@@ -32,17 +39,27 @@ class Pulsar:
                  tm_params=None, ephem=None):
 
         if backend_config is None:
-            backend_config = {'backend': [1400]}
+            backend_config = default_backend_config
+
         self.backend_config = backend_config  # {backend_name: [subband_freqs]}
         self.backends = list(backend_config.keys())
+        
+        # Store the relative occurence of each backend
+        self.backend_weights = np.array([backend_config[backend].get('p', 1) 
+                                for backend in self.backends])
+        self.backend_weights /= np.sum(self.backend_weights)
+        
         # Store which backends have sub band ToAs
         self.ecorr_backends = [backend for backend in self.backends 
-                               if len(backend_config[backend]) > 1]
+                               if len(backend_config[backend]['sub_bands']) > 1]
 
         self.nepochs = len(toas)
 
         # For each epoch, randomly assign one backend
-        self.epoch_backends = np.random.choice(self.backends, size=self.nepochs, replace=True)
+        self.epoch_backends = np.random.choice(self.backends, 
+                                               size=self.nepochs,
+                                               replace=True,
+                                               p=self.backend_weights)
 
         # Build TOA, freq, and backend_flag arrays
         exp_toas, exp_freqs, exp_backend_flags = self.get_expanded_toas(
@@ -89,8 +106,8 @@ class Pulsar:
         exp_freqs = []
         exp_backend_flags = []
 
-        for i, (t, backend) in enumerate(zip(toas, self.epoch_backends)):
-            subband_freqs = backend_config[backend]
+        for t, backend in zip(toas, self.epoch_backends):
+            subband_freqs = backend_config[backend]['sub_bands']
             n_sub = len(subband_freqs)
             # NOTE: in theory those should not be strictly equal
             exp_toas.extend([t] * n_sub)
@@ -642,7 +659,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
     # or None for a simple default single-band backend
     if backend_config is None:
         # default: one backend, one frequency, no sub-bands
-        backend_config = [{'backend': [1400]}] * npsrs
+        backend_config = [default_backend_config] * npsrs
     elif isinstance(backend_config, dict):
         # same config for all pulsars
         backend_config = [backend_config] * npsrs
