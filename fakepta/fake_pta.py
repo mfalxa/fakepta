@@ -28,7 +28,7 @@ spec = dict(spec)
 default_backend_config = {
     'NUPPI': {
             'sub_bands': [1400], # Sub-bands used by this backend
-            'p': 1 # Proportion of observations from this backend 
+            'p': 1. # Proportion of observations from this backend 
             }
 }
 
@@ -45,7 +45,7 @@ class Pulsar:
         self.backends = list(backend_config.keys())
         
         # Store the relative occurence of each backend
-        self.backend_weights = np.array([backend_config[backend].get('p', 1) 
+        self.backend_weights = np.array([backend_config[backend].get('p', 1.) 
                                 for backend in self.backends])
         self.backend_weights /= np.sum(self.backend_weights)
         
