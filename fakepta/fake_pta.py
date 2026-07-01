@@ -28,15 +28,16 @@ spec = dict(spec)
 default_backend_config = {
     'NUPPI': {
             'sub_bands': [1400], # Sub-bands used by this backend
+            'RMS': 1e-6,
             'p': 1. # Proportion of observations from this backend 
             }
 }
 
 class Pulsar:
 
-    def __init__(self, toas, toaerr, theta, phi, pdist=(1., 0.2),
+    def __init__(self, toas, theta, phi, pdist=(1., 0.2),
                  backend_config=None, custom_noisedict=None, custom_model=None,
-                 tm_params=None, ephem=None):
+                 tm_params=None, ephem=None, toaerr=None):
 
         if backend_config is None:
             backend_config = default_backend_config
@@ -51,15 +52,15 @@ class Pulsar:
         
         # Store which backends have sub band ToAs
         self.ecorr_backends = [backend for backend in self.backends 
-                               if len(backend_config[backend]['sub_bands']) > 1]
+                            if len(backend_config[backend]['sub_bands']) > 1]
 
         self.nepochs = len(toas)
 
         # For each epoch, randomly assign one backend
         self.epoch_backends = np.random.choice(self.backends, 
-                                               size=self.nepochs,
-                                               replace=True,
-                                               p=self.backend_weights)
+                                                size=self.nepochs,
+                                                replace=True,
+                                                p=self.backend_weights)
 
         # Build TOA, freq, and backend_flag arrays
         exp_toas, exp_freqs, exp_backend_flags = self.get_expanded_toas(
@@ -68,7 +69,17 @@ class Pulsar:
         self.toas = np.array(exp_toas)
         self.freqs = np.array(exp_freqs)
         self.backend_flags = np.array(exp_backend_flags)
-        self.toaerrs = toaerr * np.ones(len(self.toas))
+        
+        if toaerr is not None:
+            # Use a global RMS
+            self.toaerrs = toaerr * np.ones(len(self.toas))
+        else:
+            self.toaerrs = np.zeros(len(self.toas))
+            # Use RMS per backend
+            for backend in self.backends:
+                mask = self.backend_flags == backend
+                self.toaerrs[mask] = self.backend_config[backend]['RMS']
+
         self.residuals = np.zeros(len(self.toas))
         self.Tspan = np.amax(self.toas) - np.amin(self.toas)
 
@@ -644,9 +655,11 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
         toas = [(Tmax - Tobs[i])*yr + np.arange(1, ntoas[i]+1)*cadence[i] for i in range(npsrs)]
 
     if toaerr is None:
-        toaerr = np.power(10, np.random.uniform(-7., -5., size=npsrs))
+        toaerr = [None] * npsrs
     elif isinstance(toaerr, float):
         toaerr = toaerr * np.ones(npsrs)
+    elif toaerr == 'randomize':
+        toaerr = np.power(10, np.random.uniform(-7., -5., size=npsrs))
 
     # Pulsar distances
     if pdist is None:
@@ -678,7 +691,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
     psrs = []
     for i in range(npsrs):
         psr = Pulsar(
-            toas[i], toaerr[i],
+            toas[i],
             np.arccos(costhetas[i]), phis[i],
             pdist[i],
             backend_config=backend_config[i],
@@ -686,6 +699,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
             custom_model=custom_model,
             tm_params={'F0': (F0[i], np.random.uniform(1e-13, 1e-12))},
             ephem=ephem,
+            toaerr=toaerr[i]
         )
         logging.info('Creating psr %s', psr.name)
         psr.add_white_noise(add_ecorr=add_ecorr)
@@ -751,7 +765,7 @@ def copy_array(psrs, custom_noisedict, custom_models=None):
 
     fake_psrs = []
     for psr in psrs:
-        fake_psr = Pulsar(psr.toas, 10**(-6), psr.theta, phi=psr.phi, pdist=1., backends=np.unique(psr.backend_flags), custom_model=custom_models[psr.name])
+        fake_psr = Pulsar(psr.toas, psr.theta, phi=psr.phi, pdist=1., custom_model=custom_models[psr.name])
         fake_psr.name = psr.name
         fake_psr.toas = psr.toas
         fake_psr.toaerrs = psr.toaerrs
