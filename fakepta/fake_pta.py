@@ -229,13 +229,16 @@ class Pulsar:
                 if signal in key:
                     self.noisedict.pop(key)
 
-    def add_white_noise(self, add_ecorr=False, randomize=False):
+    def add_white_noise(self, add_ecorr=False, randomize=False, rng=None):
+
+        if rng is None:
+            rng = np.random.default_rng()
 
         if randomize:
             for key in list(self.noisedict):
-                if 'efac'   in key: self.noisedict[key] = np.random.uniform(0.5, 2.5)
-                if 'equad'  in key: self.noisedict[key] = np.random.uniform(-8., -5.)
-                if 'ecorr'  in key: self.noisedict[key] = np.random.uniform(-10., -7.)
+                if 'efac'   in key: self.noisedict[key] = rng.uniform(0.5, 2.5)
+                if 'equad'  in key: self.noisedict[key] = rng.uniform(-8., -5.)
+                if 'ecorr'  in key: self.noisedict[key] = rng.uniform(-10., -7.)
 
         # EFAC + EQUAD: per backend, applied to all its sub-band TOAs
         toaerrs2 = np.zeros(len(self.toaerrs))
@@ -244,7 +247,7 @@ class Pulsar:
             efac   = self.noisedict[self.name+'_'+backend+'_efac']
             log10_tnequad = self.noisedict[self.name+'_'+backend+'_log10_tnequad']
             toaerrs2[mask] = efac**2 * self.toaerrs[mask]**2 + 10**(2*log10_tnequad)
-        self.residuals += np.random.normal(scale=np.sqrt(toaerrs2))
+        self.residuals += rng.normal(scale=np.sqrt(toaerrs2))
 
         # ECORR: one multivariate draw per epoch per backend group
         if add_ecorr:
@@ -256,10 +259,10 @@ class Pulsar:
                     for epoch_idx in epoch_list:
                         n = len(epoch_idx)
                         if n < 2:
-                            self.residuals[epoch_idx] += np.random.normal(scale=sigma_j)
+                            self.residuals[epoch_idx] += rng.normal(scale=sigma_j)
                             continue
                         cov = sigma_j**2 * np.ones((n, n))
-                        self.residuals[epoch_idx] += np.random.multivariate_normal(
+                        self.residuals[epoch_idx] += rng.multivariate_normal(
                             mean=np.zeros(n), cov=cov
                         )
 
@@ -299,7 +302,7 @@ class Pulsar:
 
         return result
 
-    def add_red_noise(self, spectrum='powerlaw', f_psd=None, **kwargs):
+    def add_red_noise(self, spectrum='powerlaw', f_psd=None, rng=None, **kwargs):
 
         rn_components = self.custom_model['RN']
         if rn_components is not None:
@@ -322,9 +325,10 @@ class Pulsar:
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_red_noise', kwargs)
 
-                self.add_time_correlated_noise(signal='red_noise', spectrum=spectrum, idx=0., psd=psd, f_psd=f_psd)
+                self.add_time_correlated_noise(signal='red_noise', spectrum=spectrum, idx=0., 
+                                               psd=psd, f_psd=f_psd, rng=rng)
 
-    def add_dm_noise(self, spectrum='powerlaw', f_psd=None, **kwargs):
+    def add_dm_noise(self, spectrum='powerlaw', f_psd=None, rng=None, **kwargs):
 
         dm_components = self.custom_model['DM']
         if dm_components is not None:
@@ -347,9 +351,10 @@ class Pulsar:
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_dm_gp', kwargs)
 
-            self.add_time_correlated_noise(signal='dm_gp', spectrum=spectrum, idx=2., psd=psd, f_psd=f_psd)
+            self.add_time_correlated_noise(signal='dm_gp', spectrum=spectrum, idx=2., 
+                                           psd=psd, f_psd=f_psd, rng=rng)
 
-    def add_chromatic_noise(self, spectrum='powerlaw', f_psd=None, **kwargs):
+    def add_chromatic_noise(self, spectrum='powerlaw', f_psd=None, rng=None, **kwargs):
 
         sv_components = self.custom_model['Sv']
         if sv_components is not None:
@@ -372,9 +377,11 @@ class Pulsar:
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_chrom_gp', kwargs)
 
-            self.add_time_correlated_noise(signal='chrom_gp', spectrum=spectrum, idx=4, psd=psd, f_psd=f_psd)
+            self.add_time_correlated_noise(signal='chrom_gp', spectrum=spectrum, idx=4, 
+                                           psd=psd, f_psd=f_psd, rng=rng)
 
-    def add_system_noise(self, backend=None, components=30, spectrum='powerlaw', f_psd=None, **kwargs):
+    def add_system_noise(self, backend=None, components=30, spectrum='powerlaw', f_psd=None, 
+                         rng=None, **kwargs):
 
         assert backend is not None, '"backend" name where system noise is injected must be given'
 
@@ -396,9 +403,14 @@ class Pulsar:
             psd = spec[spectrum](f_psd, kwargs)
             self.update_noisedict(self.name+'_system_noise_'+str(backend), kwargs)
 
-        self.add_time_correlated_noise(signal='system_noise_'+str(backend), idx=0., backend=backend, psd=psd, f_psd=f_psd)
+        self.add_time_correlated_noise(signal='system_noise_'+str(backend), idx=0., 
+                                       backend=backend, psd=psd, f_psd=f_psd, rng=rng)
 
-    def add_time_correlated_noise(self, signal='', spectrum='powerlaw', psd=None, f_psd=None, idx=0, freqf=1400, backend=None):
+    def add_time_correlated_noise(self, signal='', spectrum='powerlaw', psd=None, f_psd=None, idx=0, 
+                                  freqf=1400, backend=None, rng=None):
+        
+        if rng is None:
+            rng = np.random.default_rng()
 
         # generate time correlated noise with given PSD and chromatic index
 
@@ -415,7 +427,7 @@ class Pulsar:
         assert len(psd) == len(f_psd), '"psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to the frequencies where the "psd" is evaluated.'
         psd = np.repeat(psd, 2)
 
-        coeffs = np.random.normal(loc=0., scale=np.sqrt(psd))
+        coeffs = rng.normal(loc=0., scale=np.sqrt(psd))
 
         # save noise properties in signal model
         self.signal_model[signal] = {}
@@ -614,7 +626,10 @@ class Pulsar:
 def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
                     pdist=None, isotropic=False, backend_config=None,
                     noisedict=None, custom_model=None, ephem=None, f_psd=None,
-                    add_ecorr=False):
+                    add_ecorr=False, rng=None):
+    
+    if rng is None:
+        rng = np.random.default_rng()
 
     if isotropic:
         i = np.arange(0, npsrs, dtype=float) + 0.5
@@ -622,12 +637,12 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
         costhetas = 1 - 2*i/npsrs
         phis = np.mod(2 * np.pi * i / golden_ratio, 2*np.pi)
     else:
-        costhetas = np.random.uniform(-1., 1., size=npsrs)
-        phis = np.random.uniform(0., 2*np.pi, size=npsrs)
+        costhetas = rng.uniform(-1., 1., size=npsrs)
+        phis = rng.uniform(0., 2*np.pi, size=npsrs)
 
     # Observation time for each pulsar
     if Tobs is None:
-        Tobs = np.random.uniform(10, 20, size=npsrs)
+        Tobs = rng.uniform(10, 20, size=npsrs)
     elif isinstance(Tobs, (float, int)):
         Tobs = Tobs * np.ones(npsrs)
 
@@ -635,7 +650,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
     yr = 365.25 * 24 * 3600
     if ntoas is None:
         cadence = 7 * 24 * 3600
-        F0 = np.random.uniform(200, 300, size=npsrs)
+        F0 = rng.uniform(200, 300, size=npsrs)
         d_cadence = (F0 * cadence - np.floor(F0 * cadence)) / F0
         cadence = cadence - d_cadence
         ntoas = np.int32(Tobs * 365.25 * 24 * 3600 / cadence)
@@ -648,7 +663,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
     Tmax = np.amax(Tobs)
     if gaps:
         gap_odds = [True, True, True, False] # one out of five
-        keep = [np.random.choice(gap_odds, size=ntoa) for ntoa in ntoas]
+        keep = [rng.choice(gap_odds, size=ntoa) for ntoa in ntoas]
         toas = [(Tmax - Tobs[i])*yr + np.arange(1, ntoas[i]+1)*cadence[i] for i in range(npsrs)]
         toas = [toas[i][keep[i]] for i in range(npsrs)]
     else:
@@ -659,11 +674,11 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
     elif isinstance(toaerr, float):
         toaerr = toaerr * np.ones(npsrs)
     elif toaerr == 'randomize':
-        toaerr = np.power(10, np.random.uniform(-7., -5., size=npsrs))
+        toaerr = np.power(10, rng.uniform(-7., -5., size=npsrs))
 
     # Pulsar distances
     if pdist is None:
-        dists = np.random.uniform(0.5, 1.5, size=npsrs)
+        dists = rng.uniform(0.5, 1.5, size=npsrs)
         pdist = [[dist, 0.2*dist] for dist in dists]
     elif isinstance(pdist, float):
         pdist = [[pdist, 0.2*pdist]] * npsrs
@@ -697,45 +712,51 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
             backend_config=backend_config[i],
             custom_noisedict=noisedict,
             custom_model=custom_model,
-            tm_params={'F0': (F0[i], np.random.uniform(1e-13, 1e-12))},
+            tm_params={'F0': (F0[i], rng.uniform(1e-13, 1e-12))},
             ephem=ephem,
             toaerr=toaerr[i]
         )
         logging.info('Creating psr %s', psr.name)
-        psr.add_white_noise(add_ecorr=add_ecorr)
+        psr.add_white_noise(add_ecorr=add_ecorr, rng=rng)
 
         try:
             psr.add_red_noise(spectrum='powerlaw',
                               log10_A=psr.noisedict[psr.name+'_red_noise_log10_A'],
                               gamma=psr.noisedict[psr.name+'_red_noise_gamma'],
-                              f_psd=f_psd)
+                              f_psd=f_psd,
+                              rng=rng)
         except:
             psr.add_red_noise(spectrum='powerlaw',
-                              log10_A=np.random.uniform(-17., -13),
-                              gamma=np.random.uniform(1, 5),
-                              f_psd=f_psd)
+                              log10_A=rng.uniform(-17., -13),
+                              gamma=rng.uniform(1, 5),
+                              f_psd=f_psd,
+                              rng=rng)
 
         try:
             psr.add_dm_noise(spectrum='powerlaw',
                              log10_A=psr.noisedict[psr.name+'_dm_gp_log10_A'],
                              gamma=psr.noisedict[psr.name+'_dm_gp_gamma'],
-                             f_psd=f_psd)
+                             f_psd=f_psd,
+                             rng=rng)
         except:
             psr.add_dm_noise(spectrum='powerlaw',
-                             log10_A=np.random.uniform(-17., -13),
-                             gamma=np.random.uniform(1, 5),
-                             f_psd=f_psd)
+                             log10_A=rng.uniform(-17., -13),
+                             gamma=rng.uniform(1, 5),
+                             f_psd=f_psd,
+                             rng=rng)
 
         try:
             psr.add_chromatic_noise(spectrum='powerlaw',
                                     log10_A=psr.noisedict[psr.name+'_chrom_gp_log10_A'],
                                     gamma=psr.noisedict[psr.name+'_chrom_gp_gamma'],
-                                    f_psd=f_psd)
+                                    f_psd=f_psd,
+                                    rng=rng)
         except:
             psr.add_chromatic_noise(spectrum='powerlaw',
-                                    log10_A=np.random.uniform(-17., -13),
-                                    gamma=np.random.uniform(1, 5),
-                                    f_psd=f_psd)
+                                    log10_A=rng.uniform(-17., -13),
+                                    gamma=rng.uniform(1, 5),
+                                    f_psd=f_psd,
+                                    rng=rng)
 
         psrs.append(psr)
 
