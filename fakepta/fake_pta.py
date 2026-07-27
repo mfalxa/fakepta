@@ -149,7 +149,10 @@ class Pulsar:
             # per-backend keys without pulsar name prefix
             for backend in self.backends:
                 noisedict[self.name+'_'+backend+'_efac']          = custom_noisedict[backend+'_efac']
-                noisedict[self.name+'_'+backend+'_log10_tnequad'] = custom_noisedict[backend+'_log10_tnequad']
+                noisedict[self.name+'_'+backend+'_log10_tnequad'] = custom_noisedict.get(
+                                                                        backend+'_log10_tnequad',
+                                                                        -8.
+                )
                 for opt in ['log10_t2equad', 'log10_ecorr']:
                     key = backend+'_'+opt
                     if key in custom_noisedict.keys():
