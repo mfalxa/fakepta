@@ -629,7 +629,7 @@ class Pulsar:
 def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
                     pdist=None, isotropic=False, backend_config=None,
                     noisedict=None, custom_model=None, ephem=None, f_psd=None,
-                    add_ecorr=False, rng=None):
+                    add_ecorr=False, rng=None, verbose=True):
     
     if rng is None:
         rng = np.random.default_rng()
@@ -719,7 +719,8 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
             ephem=ephem,
             toaerr=toaerr[i]
         )
-        logging.info('Creating psr %s', psr.name)
+        if verbose:
+            logging.info('Creating psr %s', psr.name)
         psr.add_white_noise(add_ecorr=add_ecorr, rng=rng)
 
         try:
