@@ -67,7 +67,7 @@ class Pulsar:
 
         # Build TOA, freq, and backend_flag arrays
         exp_toas, exp_freqs, exp_backend_flags = self.get_expanded_toas(
-            toas, backend_config
+            toas, backend_config, rng=rng
         )
         self.toas = np.array(exp_toas)
         self.freqs = np.array(exp_freqs)
