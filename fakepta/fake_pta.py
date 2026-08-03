@@ -37,7 +37,10 @@ class Pulsar:
 
     def __init__(self, toas, theta, phi, pdist=(1., 0.2),
                  backend_config=None, custom_noisedict=None, custom_model=None,
-                 tm_params=None, ephem=None, toaerr=None):
+                 tm_params=None, ephem=None, toaerr=None, rng=None):
+
+        if rng is None:
+            rng = np.random.default_rng()
 
         if backend_config is None:
             backend_config = default_backend_config
@@ -57,10 +60,10 @@ class Pulsar:
         self.nepochs = len(toas)
 
         # For each epoch, randomly assign one backend
-        self.epoch_backends = np.random.choice(self.backends, 
-                                                size=self.nepochs,
-                                                replace=True,
-                                                p=self.backend_weights)
+        self.epoch_backends = rng.choice(self.backends, 
+                                         size=self.nepochs,
+                                         replace=True,
+                                         p=self.backend_weights)
 
         # Build TOA, freq, and backend_flag arrays
         exp_toas, exp_freqs, exp_backend_flags = self.get_expanded_toas(
@@ -111,7 +114,10 @@ class Pulsar:
         self.fitpars = [*self.tm_pars]
         self.init_noisedict(custom_noisedict)
 
-    def get_expanded_toas(self, toas, backend_config, freq_scale=5):
+    def get_expanded_toas(self, toas, backend_config, freq_scale=5, rng=None):
+        if rng is None:
+            rng = np.random.default_rng()
+
         # Each epoch contributes len(backend_config[assigned_backend]) TOAs
         exp_toas = []
         exp_freqs = []
@@ -123,7 +129,7 @@ class Pulsar:
             # NOTE: in theory those should not be strictly equal
             exp_toas.extend([t] * n_sub)
             for f in subband_freqs:
-                exp_freqs.append(abs(f + np.random.normal(scale=freq_scale)))
+                exp_freqs.append(abs(f + rng.normal(scale=freq_scale)))
             exp_backend_flags.extend([backend] * n_sub)
 
         return exp_toas, exp_freqs, exp_backend_flags
@@ -571,12 +577,14 @@ class Pulsar:
             red_cov += self.make_time_correlated_noise_cov(signal='chrom_gp')
         return white_cov, red_cov
     
-    def draw_noise_model(self, residuals=None):
+    def draw_noise_model(self, residuals=None, rng=None):
+        if rng is None:
+            rng = np.random.default_rng()
         
         white_cov, red_cov = self.make_noise_covariance_matrix()
         cov = np.diag(white_cov) + red_cov
         if residuals is None:
-            resids = np.random.multivariate_normal(mean=np.zeros(len(self.toas)), cov=cov)
+            resids = rng.multivariate_normal(mean=np.zeros(len(self.toas)), cov=cov)
         else:
             inv_cov = np.linalg.inv(cov)
             resids = np.dot(red_cov.T, np.dot(inv_cov, residuals))
@@ -717,7 +725,8 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
             custom_model=custom_model,
             tm_params={'F0': (F0[i], rng.uniform(1e-13, 1e-12))},
             ephem=ephem,
-            toaerr=toaerr[i]
+            toaerr=toaerr[i],
+            rng=rng
         )
         if verbose:
             logging.info('Creating psr %s', psr.name)
