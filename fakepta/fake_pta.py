@@ -37,7 +37,8 @@ class Pulsar:
 
     def __init__(self, toas, theta, phi, pdist=(1., 0.2),
                  backend_config=None, custom_noisedict=None, custom_model=None,
-                 tm_params=None, ephem=None, toaerr=None, rng=None):
+                 tm_params=None, ephem=None, toaerr=None, rms_scatter=None,
+                 rng=None):
 
         if rng is None:
             rng = np.random.default_rng()
@@ -72,18 +73,25 @@ class Pulsar:
         self.toas = np.array(exp_toas)
         self.freqs = np.array(exp_freqs)
         self.backend_flags = np.array(exp_backend_flags)
+
+        self.n_toas = len(self.toas)
         
         if toaerr is not None:
             # Use a global RMS
-            self.toaerrs = toaerr * np.ones(len(self.toas))
+            self.toaerrs = toaerr * np.ones(self.n_toas)
         else:
-            self.toaerrs = np.zeros(len(self.toas))
+            self.toaerrs = np.zeros(self.n_toas)
             # Use RMS per backend
             for backend in self.backends:
                 mask = self.backend_flags == backend
                 self.toaerrs[mask] = self.backend_config[backend]['RMS']
 
-        self.residuals = np.zeros(len(self.toas))
+        if rms_scatter is not None:
+            assert isinstance(rms_scatter, float), "rms_scatter must be a float."
+            self.toaerrs *= rng.uniform(1-rms_scatter, 1+rms_scatter, 
+                                        size=self.n_toas)
+
+        self.residuals = np.zeros(self.n_toas)
         self.Tspan = np.amax(self.toas) - np.amin(self.toas)
 
         if custom_model is None:
@@ -92,7 +100,7 @@ class Pulsar:
             self.custom_model = custom_model
         self.signal_model = {}
         self.flags = {}
-        self.flags['pta'] = ['FAKE'] * len(self.toas)
+        self.flags['pta'] = ['FAKE'] * self.n_toas
 
         self.theta = theta
         self.phi = phi
@@ -102,7 +110,7 @@ class Pulsar:
         if ephem is not None:
             self.ephem = ephem
             self.planetssb = ephem.get_planet_ssb(self.toas)
-            self.pos_t = np.tile(self.pos, (len(self.toas), 1))
+            self.pos_t = np.tile(self.pos, (self.n_toas, 1))
         else:
             self.planetssb = None
             self.pos_t = None
@@ -202,8 +210,8 @@ class Pulsar:
     def make_Mmat(self, t0=0.):
 
         npar = len([*self.tm_pars]) + 1
-        self.Mmat = np.zeros((len(self.toas), npar))
-        self.Mmat[:, 0] = np.ones(len(self.toas))
+        self.Mmat = np.zeros((self.n_toas, npar))
+        self.Mmat[:, 0] = np.ones(self.n_toas)
         self.Mmat[:, 1] = -(self.toas - t0) / self.tm_pars['F0'][0]
         self.Mmat[:, 2] = -0.5 * (self.toas - t0)**2 / self.tm_pars['F0'][0]
         self.Mmat[:, 3] = 1 / self.freqs**2
@@ -231,7 +239,7 @@ class Pulsar:
 
         # set residuals to zero and clean signal model dict
 
-        self.residuals = np.zeros(len(self.toas))
+        self.residuals = np.zeros(self.n_toas)
         for signal in [*self.signal_model]:
             self.signal_model.pop(signal)
             for key in [*self.noisedict]:
@@ -430,7 +438,7 @@ class Pulsar:
                 logging.error(backend, 'not found in backend_flags.')
                 return
         else:
-            mask = np.ones(len(self.toas), dtype='bool')
+            mask = np.ones(self.n_toas, dtype='bool')
 
         df = np.diff(np.append(0., f_psd))
         assert len(psd) == len(f_psd), '"psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to the frequencies where the "psd" is evaluated.'
@@ -467,7 +475,7 @@ class Pulsar:
                 logging.error(backend, 'not found in backend_flags.')
                 return
         else:
-            mask = np.ones(len(self.toas), dtype='bool')
+            mask = np.ones(self.n_toas, dtype='bool')
 
         # save noise properties in signal model
         f = self.signal_model[signal]['f']
@@ -562,13 +570,13 @@ class Pulsar:
         if self.backends is None:
             toaerrs = np.sqrt(self.noisedict[self.name+'_efac']**2 * self.toaerrs**2 + 10**(2*self.noisedict[self.name+'_log10_tnequad']))
         else:
-            toaerrs = np.zeros(len(self.toas))
+            toaerrs = np.zeros(self.n_toas)
             for backend in self.backends:
                 mask_backend = self.backend_flags == backend
                 toaerrs[mask_backend] = np.sqrt(self.noisedict[self.name+'_'+backend+'_efac']**2 * self.toaerrs[mask_backend]**2 + 10**(2*self.noisedict[self.name+'_'+backend+'_log10_tnequad']))
         white_cov = toaerrs**2
 
-        red_cov = np.zeros((len(self.toas), len(self.toas)))
+        red_cov = np.zeros((self.n_toas, self.n_toas))
         if self.custom_model['RN'] is not None:
             red_cov += self.make_time_correlated_noise_cov(signal='red_noise')
         if self.custom_model['DM'] is not None:
@@ -584,7 +592,7 @@ class Pulsar:
         white_cov, red_cov = self.make_noise_covariance_matrix()
         cov = np.diag(white_cov) + red_cov
         if residuals is None:
-            resids = rng.multivariate_normal(mean=np.zeros(len(self.toas)), cov=cov)
+            resids = rng.multivariate_normal(mean=np.zeros(self.n_toas), cov=cov)
         else:
             inv_cov = np.linalg.inv(cov)
             resids = np.dot(red_cov.T, np.dot(inv_cov, residuals))
@@ -596,7 +604,7 @@ class Pulsar:
 
         if signals is None:
             signals = [*self.signal_model]
-        sig = np.zeros(len(self.toas))
+        sig = np.zeros(self.n_toas)
         for signal in signals:
             if signal == 'cgw':
                 for ncgw in len(self.signal_model['cgw']):
@@ -637,7 +645,8 @@ class Pulsar:
 def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
                     pdist=None, isotropic=False, backend_config=None,
                     noisedict=None, custom_model=None, ephem=None, f_psd=None,
-                    add_ecorr=False, rng=None, verbose=True):
+                    add_ecorr=False, rms_scatter=None,
+                    rng=None, verbose=True):
     
     if rng is None:
         rng = np.random.default_rng()
@@ -726,6 +735,7 @@ def make_fake_array(npsrs=25, Tobs=None, ntoas=None, gaps=True, toaerr=None,
             tm_params={'F0': (F0[i], rng.uniform(1e-13, 1e-12))},
             ephem=ephem,
             toaerr=toaerr[i],
+            rms_scatter=rms_scatter,
             rng=rng
         )
         if verbose:
