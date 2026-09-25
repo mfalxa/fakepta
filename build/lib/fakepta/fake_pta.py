@@ -329,7 +329,7 @@ class Pulsar:
     #                 q_i = [n]
     #     return quantised_idx
 
-    def add_red_noise(self, spectrum='powerlaw', f_psd=None, **kwargs):
+    def add_red_noise(self, spectrum='powerlaw', f_psd=None, df=None, **kwargs):
 
         rn_components = self.custom_model['RN']
         if rn_components is not None:
@@ -352,9 +352,10 @@ class Pulsar:
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_red_noise', kwargs)
 
-                self.add_time_correlated_noise(signal='red_noise', spectrum=spectrum, idx=0., psd=psd, f_psd=f_psd)
+            self.add_time_correlated_noise(signal='red_noise', spectrum=spectrum, idx=0., 
+                                            psd=psd, f_psd=f_psd, df=df)
 
-    def add_dm_noise(self, spectrum='powerlaw', f_psd=None, **kwargs):
+    def add_dm_noise(self, spectrum='powerlaw', f_psd=None, df=None, **kwargs):
 
         dm_components = self.custom_model['DM']
         if dm_components is not None:
@@ -377,9 +378,10 @@ class Pulsar:
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_dm_gp', kwargs)
 
-            self.add_time_correlated_noise(signal='dm_gp', spectrum=spectrum, idx=2., psd=psd, f_psd=f_psd)
+            self.add_time_correlated_noise(signal='dm_gp', spectrum=spectrum, idx=2., 
+                                           psd=psd, f_psd=f_psd, df=df)
 
-    def add_chromatic_noise(self, spectrum='powerlaw', f_psd=None, **kwargs):
+    def add_chromatic_noise(self, spectrum='powerlaw', f_psd=None, df=None, **kwargs):
 
         sv_components = self.custom_model['Sv']
         if sv_components is not None:
@@ -402,9 +404,11 @@ class Pulsar:
                 psd = spec[spectrum](f_psd, **kwargs)
                 self.update_noisedict(self.name+'_chrom_gp', kwargs)
 
-            self.add_time_correlated_noise(signal='chrom_gp', spectrum=spectrum, idx=4, psd=psd, f_psd=f_psd)
+            self.add_time_correlated_noise(signal='chrom_gp', spectrum=spectrum, idx=4, 
+                                           psd=psd, f_psd=f_psd, df=df)
 
-    def add_system_noise(self, backend=None, components=30, spectrum='powerlaw', f_psd=None, **kwargs):
+    def add_system_noise(self, backend=None, components=30, spectrum='powerlaw', 
+                         f_psd=None, df=None, **kwargs):
 
         assert backend is not None, '"backend" name where system noise is injected must be given'
 
@@ -426,9 +430,11 @@ class Pulsar:
             psd = spec[spectrum](f_psd, kwargs)
             self.update_noisedict(self.name+'_system_noise_'+str(backend), kwargs)
 
-        self.add_time_correlated_noise(signal='system_noise_'+str(backend), idx=0., backend=backend, psd=psd, f_psd=f_psd)
+        self.add_time_correlated_noise(signal='system_noise_'+str(backend), idx=0., 
+                                       backend=backend, psd=psd, f_psd=f_psd, df=df)
 
-    def add_time_correlated_noise(self, signal='', spectrum='powerlaw', psd=None, f_psd=None, idx=0, freqf=1400, backend=None):
+    def add_time_correlated_noise(self, signal='', spectrum='powerlaw', psd=None, 
+                                  f_psd=None, df=None, idx=0, freqf=1400, backend=None):
 
         # generate time correlated noise with given PSD and chromatic index
 
@@ -441,7 +447,9 @@ class Pulsar:
         else:
             mask = np.ones(len(self.toas), dtype='bool')
 
-        df = np.diff(np.append(0., f_psd))
+        if df is None:
+            # This assumes that f_psd[0] is also the frequency bin width: valid for Fourier basis
+            df = np.diff(np.append(0., f_psd))
         assert len(psd) == len(f_psd), '"psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to the frequencies where the "psd" is evaluated.'
         psd = np.repeat(psd, 2)
 

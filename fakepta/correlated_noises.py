@@ -1,10 +1,12 @@
-from fakepta.fake_pta import Pulsar
+import importlib
+import inspect
+
+import healpy as hp
 import numpy as np
 import scipy.constants as sc
 from scipy.interpolate import interp1d
-import healpy as hp
-import importlib, inspect
 
+from fakepta.fake_pta import Pulsar
 
 # load spectrum functions from "spectrum.py"
 module = importlib.import_module('fakepta.spectrum')
@@ -108,7 +110,9 @@ def curn(psrs):
     return np.eye(npsr)
 
 # Noise generating function
-def add_common_correlated_noise(psrs, orf='hd', spectrum='powerlaw', name='gw', idx=0, components=30, freqf=1400, custom_psd=None, f_psd=None, h_map=None, **kwargs):
+def add_common_correlated_noise(psrs, orf='hd', spectrum='powerlaw', name='gw', idx=0, 
+                                components=30, freqf=1400, custom_psd=None, 
+                                f_psd=None, df=None, h_map=None, **kwargs):
 
     if name is not None:
         signal_name = name + '_common'
@@ -118,7 +122,10 @@ def add_common_correlated_noise(psrs, orf='hd', spectrum='powerlaw', name='gw', 
     Tspan = np.amax([psr.toas.max() for psr in psrs]) - np.amin([psr.toas.min() for psr in psrs])
     if f_psd is None:
         f_psd = np.arange(1, components+1) / Tspan
-    df = np.diff(np.append(0., f_psd))
+    if df is None:
+        df = np.diff(np.append(0., f_psd))
+    # a scalar df is used as a constant bin width for all frequencies
+    df = np.broadcast_to(np.asarray(df, dtype=float), np.shape(f_psd))
     if spectrum == 'custom':
         # assert f_psd is None, '"f_psd" must not be None. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
         assert len(custom_psd) == len(f_psd), '"custom_psd" and "f_psd" must be same length. The frequencies "f_psd" correspond to frequencies where the "custom_psd" is evaluated.'
@@ -138,6 +145,7 @@ def add_common_correlated_noise(psrs, orf='hd', spectrum='powerlaw', name='gw', 
         psr.signal_model[signal_name]['spectrum'] = spectrum
         psr.signal_model[signal_name]['hmap'] = h_map
         psr.signal_model[signal_name]['f'] = f_psd
+        psr.signal_model[signal_name]['df'] = df
         psr.signal_model[signal_name]['psd'] = psd_gwb
         psr.signal_model[signal_name]['fourier'] = np.vstack((np.zeros(components), np.zeros(components)))
         psr.signal_model[signal_name]['nbin'] = components
