@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fakepta"
+version = "0.1"
+description = "Tool for pulsar timing array simulation"
+readme = "README.md"
+authors = [{name = "Mikel Falxa"}, {name = "Hippolyte Quelquejay Leclere"}]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "healpy",
+    "enterprise-pulsar",
+    "enterprise_extensions",
+]
+
+[project.urls]
+Homepage = "https://github.com/mfalxa/fakepta/"
+
+[tool.setuptools]
+packages = ["fakepta"]
